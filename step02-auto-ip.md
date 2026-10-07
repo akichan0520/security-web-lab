@@ -298,4 +298,304 @@ button.addEventListener("click", function() {
 `save.php` に以下を追加する。
 
 ```php
-$time = date("Y-m-d H
+$time = date("Y-m-d H:i:s");
+```
+
+ログ作成部分を、
+
+```php
+$log = $ip . " : " . $event . "\n";
+```
+
+から、
+
+```php
+$log =
+    $time . " : " .
+    $ip . " : " .
+    $event . "\n";
+```
+
+へ変更する。
+
+---
+
+## 9. save.php
+
+この段階では以下のようになる。
+
+```php
+<?php
+
+$data = file_get_contents("php://input");
+
+$json = json_decode($data, true);
+
+$ip = $json["ip"];
+$event = $json["event"];
+
+$time = date("Y-m-d H:i:s");
+
+$log =
+    $time . " : " .
+    $ip . " : " .
+    $event . "\n";
+
+file_put_contents(
+    "alerts.txt",
+    $log,
+    FILE_APPEND
+);
+
+echo "記録しました";
+
+?>
+```
+
+---
+
+## 10. 動作確認
+
+ブラウザを開く。
+
+IP欄に自動的に、
+
+```text
+192.0.2.20
+```
+
+のような値が入れば成功。
+
+イベント内容だけ入力する。
+
+```text
+SSH Login Failed
+```
+
+記録ボタンを押したあと、
+
+```bash
+cat alerts.txt
+```
+
+で確認する。
+
+例：
+
+```text
+2026-10-07 12:00:00 : 192.0.2.20 : SSH Login Failed
+```
+
+---
+
+# 重要：まだ安全ではない
+
+一見すると、
+
+```text
+IPをPHPが自動取得した
+```
+
+ので安全そうに見える。
+
+しかし現在は、
+
+```text
+PHP
+get_ip.php
+   ↓
+正しいIP取得
+   ↓
+JavaScript
+   ↓
+HTML
+   ↓
+JavaScript
+   ↓
+save.php
+```
+
+となっている。
+
+つまり、
+
+```text
+一度クライアント側へ渡した値を
+save.phpが再び信用している
+```
+
+状態である。
+
+---
+
+# readonly は信用できない
+
+HTMLでは、
+
+```html
+<input type="text" id="ip" readonly>
+```
+
+としている。
+
+通常操作では変更できない。
+
+しかしブラウザのDeveloper Toolsからは変更可能。
+
+例えばConsoleで、
+
+```javascript
+document.getElementById("ip").value = "8.8.8.8";
+```
+
+とすると、
+
+```text
+192.0.2.20
+```
+
+だった表示を、
+
+```text
+8.8.8.8
+```
+
+へ変更できる。
+
+---
+
+## 改ざん実験
+
+Developer ToolsのConsoleで、
+
+```javascript
+document.getElementById("ip").value = "8.8.8.8";
+```
+
+を実行する。
+
+その状態で記録ボタンを押す。
+
+Ubuntu Serverで、
+
+```bash
+tail alerts.txt
+```
+
+を確認する。
+
+脆弱な状態では、
+
+```text
+2026-10-07 12:05:00 : 8.8.8.8 : SSH Login Failed
+```
+
+のように記録される。
+
+---
+
+# なぜ起きるのか
+
+原因は `save.php`。
+
+```php
+$ip = $json["ip"];
+```
+
+となっている。
+
+つまりPHPは、
+
+```text
+ブラウザ
+「自分のIPは8.8.8.8です」
+
+        ↓
+
+save.php
+「了解」
+
+        ↓
+
+alerts.txt
+8.8.8.8
+```
+
+と処理している。
+
+---
+
+# 信頼境界
+
+Webセキュリティでは、
+
+```text
+ブラウザ
+JavaScript
+HTML
+HTTPリクエスト
+```
+
+は基本的に、
+
+```text
+攻撃者が変更可能
+```
+
+と考える。
+
+概念図：
+
+```text
+HTML
+  ↓
+JavaScript
+  ↓
+HTTP Request
+
+━━━━━━━━━━━━━━━━
+     信頼境界
+━━━━━━━━━━━━━━━━
+
+PHP
+  ↓
+サーバ側処理
+  ↓
+ログ・DB
+```
+
+クライアント側の値をそのまま信用してはいけない。
+
+---
+
+# STEP 2で覚えること
+
+```text
+REMOTE_ADDR
+→ 接続元IP取得
+
+JSON
+→ PHPとJavaScript間のデータ交換
+
+response.json()
+→ JSONレスポンス解析
+
+readonly
+→ UI制御であってセキュリティ対策ではない
+
+Developer Tools
+→ ブラウザ上の値を変更可能
+
+信頼境界
+→ クライアント側の値は信用しない
+```
+
+次のSTEPでは、`save.php` がブラウザから送信されたIPを使用するのをやめる。
+
+保存時に、
+
+```php
+$_SERVER["REMOTE_ADDR"]
+```
+
+を使用して、サーバ側でIPを再取得する。
