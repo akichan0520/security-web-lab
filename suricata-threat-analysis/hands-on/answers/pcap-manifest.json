@@ -1,0 +1,38 @@
+[
+  {
+    "pcap": "01-http-uri.pcap",
+    "sha256": "5113ce87f1b44d884f03a19ea3cec6e5b1745de1a41c91e833a347c25644ac5c",
+    "frames": 7,
+    "bytes": 683
+  },
+  {
+    "pcap": "02-rdp-marker.pcap",
+    "sha256": "9ff412c4fc4d8eae831830fb653dfebdf569a8630b435d3299676dd943272ba4",
+    "frames": 5,
+    "bytes": 417
+  },
+  {
+    "pcap": "03-smb1-marker.pcap",
+    "sha256": "382baba42560d3bb334ab7c225a125006806d5f9ceb5e3539690c63c4783f57c",
+    "frames": 5,
+    "bytes": 410
+  },
+  {
+    "pcap": "04-dns-query.pcap",
+    "sha256": "03099d599a81656aac71ae7fddd8db14955129d11b33bd7794d9d6bea5c44a6c",
+    "frames": 2,
+    "bytes": 221
+  },
+  {
+    "pcap": "05-http-split.pcap",
+    "sha256": "16734d33191e574acae28053651343426983c7fb16928ed1e26e2d7473d5a22a",
+    "frames": 9,
+    "bytes": 796
+  },
+  {
+    "pcap": "06-false-positive.pcap",
+    "sha256": "5970c630b9eb72de405034f53fd3dadecdb8b776b5d681814c0de3bb3dfc7b3c",
+    "frames": 7,
+    "bytes": 689
+  }
+]

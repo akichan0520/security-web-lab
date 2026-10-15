@@ -1,0 +1,5 @@
+# Training-only rules: all 99xxxxx SID values are LOCAL examples, never ET/real malware detections.
+alert http any any -> any any (msg:"LAB generic /wp-content/ URI (not Emotet proof)"; flow:established,to_server; http.uri; content:"/wp-content/"; sid:9900001; rev:1;)
+alert tcp any any -> any 3389 (msg:"LAB RDP-like MS_T120 marker (not BlueKeep proof)"; flow:established,to_server; content:"MS_T120|00|"; sid:9900002; rev:1;)
+alert tcp any any -> any 445 (msg:"LAB SMB1 marker (not WannaCry proof)"; flow:established,to_server; content:"|ff 53 4d 42|"; sid:9900003; rev:1;)
+alert dns any any -> any any (msg:"LAB DNS query training.invalid"; dns.query; content:"task-001.training.invalid"; sid:9900004; rev:1;)
