@@ -1,5 +1,6 @@
-## 🛡️ Web Security Lab：CTF手動攻略ハンドブック（拡張版）
+## SQLインジェクション：手動CTFケーススタディ10題
 
-[**▶ HTML学習メニュー**](security-handbook/index.html) ｜ [**▶ 手動CTFコマンド早見表**](security-handbook/CTF_MANUAL_QUICKREF.md) ｜ [SQLi](security-handbook/docs/01-sqli-ctf-field-manual.md) ｜ [XSS文脈](security-handbook/docs/20-xss-manual-contexts.md) ｜ [OSコマンド文法](security-handbook/docs/19-os-command-manual.md) ｜ [DIRB手動探索](security-handbook/docs/21-dirb-manual-discovery.md) ｜ [解説付き演習](security-handbook/docs/25-manual-drills.md)
+- [通常検索からSyntax Error、DB・表・列・演習データへ：10のCTFケース](security-handbook/docs/28-sqli-ten-scenarios.md)
+- [ローカルSQLiteでSQLiの処理を観測するミニ演習](security-handbook/lab/sqlite_probe_10.py)
 
-Webセキュリティの理論・HTTP・SQL・OSシェル・JavaScriptを、コマンドから原因・防御まで理解する公開用日本語ノート。許可されたCTFと127.0.0.1の演習のみ。
+通常の検索→真偽対照→UNION / Error-based / Boolean / Time-basedなどを、SQLmapなしで理論とともに確認する教材です。*許可されたCTF／ローカル演習専用*。

