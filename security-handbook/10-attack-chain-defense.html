@@ -1,0 +1,88 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="description" content="CTFで学ぶSQLインジェクション、XSS、Burp Suite、PHP、MySQLの実践教材"><link rel="stylesheet" href="assets/style.css"><title>10｜攻撃連鎖と多層防御 | Web Security Lab</title></head><body><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">◈ Web Security Lab</a><p class="tag">CTF / THEORY / DEFENSE</p><div class="menulist"><a class="menu" href="index.html">⌂ 学習メニュー</a><a class="menu" href="README.html">📚 全体README</a><a class="menu" href="00-http-trust-boundaries.html">00｜HTTPと「データが命令になる」境界</a>
+<a class="menu" href="01-sqli-ctf-field-manual.html">SQLインジェクション：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="01-sqli.html">01｜SQL Injection（SQLi）— 理論、観測、原因、対策</a>
+<a class="menu" href="02-burp-sqlmap.html">02｜Burp Suite → SQLmap — HTTPの再現と診断</a>
+<a class="menu" href="03-mysql-files-os.html">03｜MySQLとファイルシステム・OSシェルの権限境界</a>
+<a class="menu" href="04-xss.html">04｜XSS：反射型・蓄積型・DOM-basedを「入力→HTTP応答→JS」で理解</a>
+<a class="menu" href="05-php-pdo.html">05｜PHP PDO — `prepare()` + `:name1` がなぜSQLiを防ぐのか</a>
+<a class="menu" href="06-command-injection.html">06｜OS Command Injection — DNS照会を例に</a>
+<a class="menu" href="07-php2shell-2026.html">07｜PHP2Shell（2026年10月公開）とDBの関係</a>
+<a class="menu" href="08-ctf-method.html">08｜CTF調査の方法論と「高難度CTF」</a>
+<a class="menu" href="09-error-troubleshooting.html">09｜エラー・表示の読み方 — 一覧</a>
+<a class="menu" href="10-attack-chain-defense.html">10｜攻撃連鎖と多層防御</a>
+<a class="menu" href="11-code-review.html">11｜PHP Webアプリのコードレビュー演習 — 発見→原因→修正</a>
+<a class="menu" href="12-case-study.html">12｜匿名化CTFケーススタディ — 調査結果と不確実性</a>
+<a class="menu" href="13-xss-ctf-field-manual.html">XSS：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="14-os-command-ctf-field-manual.html">OSコマンドインジェクション：調査・原因・安全実装</a>
+<a class="menu" href="15-auth-access-csrf-file.html">認証・認可・CSRF・ファイルアップロード：CTF調査メモ</a>
+<a class="menu" href="16-logging-incident-response.html">CTFから実務へ：ログ・検知・インシデント対応</a>
+<a class="menu" href="17-ctf-scenarios-and-answers.html">CTF問題集：答え合わせと学習目的</a><a class="menu" href="18-http-manual-curl.html">18｜HTTPをコマンドで読む・再現する</a><a class="menu" href="19-os-command-manual.html">19｜OSコマンド注入・シェル文法</a><a class="menu" href="20-xss-manual-contexts.html">20｜XSSの文脈別・DOM手動検証</a><a class="menu" href="21-dirb-manual-discovery.html">21｜DIRB系の手動パス探索</a><a class="menu" href="22-burp-without-burp.html">22｜Burpの通信解析をコマンドで再現</a><a class="menu" href="23-ctf-tactics-decision-trees.html">23｜CTF高難度対応・判断木</a><a class="menu" href="24-other-web-ctf-reasoning.html">24｜認証・認可・アップロード等</a><a class="menu" href="25-manual-drills.html">25｜手動CTF問題集・解説付き</a><a class="menu" href="CTF_MANUAL_QUICKREF.html">★ 手動コマンド早見表</a></div></aside><main class="main"><p class="topnav"><a href="index.html">← 学習メニューへ戻る</a></p><article class="article"><h1>10｜攻撃連鎖と多層防御</h1>
+<h2>単体の脆弱性と権限境界を分ける</h2>
+<pre><code class="language-mermaid">flowchart TD
+ A[HTTP入力] --&gt; B[アプリケーション]
+ B --&gt;|無加工のSQL構築| C[SQLi]
+ C --&gt; D[DB接続アカウント]
+ D --&gt;|DB権限で制限| E[(DB内データ)]
+ D --&gt;|FILE等の追加条件| F[DBサーバーFS]
+ F --&gt;|書込先とWeb実行条件が一致する場合| G[Webアプリのコード実行領域]
+ G --&gt;|PHP等の実行 + OS権限| H[OSコマンド]
+ B --&gt;|未修正ランタイム| I[PHP実行環境のRCEリスク]
+ I --&gt;|ネットワークと秘密情報等の条件次第| D
+</code></pre>
+<p>「SQLiがあるからOSシェル確定」「RCEがあるからDB全部盗める」は誤り。<strong>成立には各境界をまたぐ条件が必要</strong>であり、そのどこかを防御すれば被害を限定できる。</p>
+<h2>各段階の防御コントロール</h2>
+<table>
+<thead>
+<tr>
+  <th>層</th>
+  <th>主なコントロール</th>
+  <th>防ぐ/減らすもの</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Webアプリ</td>
+  <td>バインド、入力と構造の分離</td>
+  <td>SQLi</td>
+</tr>
+<tr>
+  <td>Web出力</td>
+  <td>文脈別エンコード、安全なDOM API、補助CSP</td>
+  <td>XSS</td>
+</tr>
+<tr>
+  <td>サーバー処理</td>
+  <td>シェルを使わない専用API</td>
+  <td>OSコマンド注入</td>
+</tr>
+<tr>
+  <td>PHPランタイム</td>
+  <td>公式修正版・依存製品の更新</td>
+  <td>実行環境の既知のRCE</td>
+</tr>
+<tr>
+  <td>DB</td>
+  <td>アカウント別最小権限、不要なFILE権限削除</td>
+  <td>DB・ファイル被害の広がり</td>
+</tr>
+<tr>
+  <td>OS/コンテナ</td>
+  <td>最小権限、ファイルシステム分離</td>
+  <td>不要なファイル操作</td>
+</tr>
+<tr>
+  <td>NW</td>
+  <td>DB通信元制限、セグメント設計</td>
+  <td>横方向へのアクセス</td>
+</tr>
+<tr>
+  <td>運用</td>
+  <td>ログ相関・異常検知・定期検証</td>
+  <td>発見と対応までの時間</td>
+</tr>
+</tbody>
+</table>
+<h2>監査するなら</h2>
+<p>検知だけでなく「パッチや設定変更後にもサービスが正常に動くか」を確認する。攻撃を再現する演習データと、実環境での監視ログや構成変更記録を区別する。</p>
+<p><strong>根拠</strong>：<a href="https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html">OWASP SQLi</a>、<a href="https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html">OWASP OS Command</a>、<a href="https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html">OWASP XSS</a>、<a href="https://www.php.net/archive/2026.php">PHP公式2026</a>。</p>
+</article><p class="footer">2026-10-24 / 教育・許可された検証専用。実データは公開しない。</p></main></div></body></html>

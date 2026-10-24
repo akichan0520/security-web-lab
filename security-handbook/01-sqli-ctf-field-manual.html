@@ -1,0 +1,383 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="description" content="CTFで学ぶSQLインジェクション、XSS、Burp Suite、PHP、MySQLの実践教材"><link rel="stylesheet" href="assets/style.css"><title>SQLインジェクション：CTF実戦フィールドマニュアル | Web Security Lab</title></head><body><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">◈ Web Security Lab</a><p class="tag">CTF / THEORY / DEFENSE</p><div class="menulist"><a class="menu" href="index.html">⌂ 学習メニュー</a><a class="menu" href="README.html">📚 全体README</a><a class="menu" href="00-http-trust-boundaries.html">00｜HTTPと「データが命令になる」境界</a>
+<a class="menu" href="01-sqli-ctf-field-manual.html">SQLインジェクション：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="01-sqli.html">01｜SQL Injection（SQLi）— 理論、観測、原因、対策</a>
+<a class="menu" href="02-burp-sqlmap.html">02｜Burp Suite → SQLmap — HTTPの再現と診断</a>
+<a class="menu" href="03-mysql-files-os.html">03｜MySQLとファイルシステム・OSシェルの権限境界</a>
+<a class="menu" href="04-xss.html">04｜XSS：反射型・蓄積型・DOM-basedを「入力→HTTP応答→JS」で理解</a>
+<a class="menu" href="05-php-pdo.html">05｜PHP PDO — `prepare()` + `:name1` がなぜSQLiを防ぐのか</a>
+<a class="menu" href="06-command-injection.html">06｜OS Command Injection — DNS照会を例に</a>
+<a class="menu" href="07-php2shell-2026.html">07｜PHP2Shell（2026年10月公開）とDBの関係</a>
+<a class="menu" href="08-ctf-method.html">08｜CTF調査の方法論と「高難度CTF」</a>
+<a class="menu" href="09-error-troubleshooting.html">09｜エラー・表示の読み方 — 一覧</a>
+<a class="menu" href="10-attack-chain-defense.html">10｜攻撃連鎖と多層防御</a>
+<a class="menu" href="11-code-review.html">11｜PHP Webアプリのコードレビュー演習 — 発見→原因→修正</a>
+<a class="menu" href="12-case-study.html">12｜匿名化CTFケーススタディ — 調査結果と不確実性</a>
+<a class="menu" href="13-xss-ctf-field-manual.html">XSS：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="14-os-command-ctf-field-manual.html">OSコマンドインジェクション：調査・原因・安全実装</a>
+<a class="menu" href="15-auth-access-csrf-file.html">認証・認可・CSRF・ファイルアップロード：CTF調査メモ</a>
+<a class="menu" href="16-logging-incident-response.html">CTFから実務へ：ログ・検知・インシデント対応</a>
+<a class="menu" href="17-ctf-scenarios-and-answers.html">CTF問題集：答え合わせと学習目的</a><a class="menu" href="18-http-manual-curl.html">18｜HTTPをコマンドで読む・再現する</a><a class="menu" href="19-os-command-manual.html">19｜OSコマンド注入・シェル文法</a><a class="menu" href="20-xss-manual-contexts.html">20｜XSSの文脈別・DOM手動検証</a><a class="menu" href="21-dirb-manual-discovery.html">21｜DIRB系の手動パス探索</a><a class="menu" href="22-burp-without-burp.html">22｜Burpの通信解析をコマンドで再現</a><a class="menu" href="23-ctf-tactics-decision-trees.html">23｜CTF高難度対応・判断木</a><a class="menu" href="24-other-web-ctf-reasoning.html">24｜認証・認可・アップロード等</a><a class="menu" href="25-manual-drills.html">25｜手動CTF問題集・解説付き</a><a class="menu" href="CTF_MANUAL_QUICKREF.html">★ 手動コマンド早見表</a></div></aside><main class="main"><p class="topnav"><a href="index.html">← 学習メニューへ戻る</a></p><article class="article"><h1>SQLインジェクション：CTF実戦フィールドマニュアル</h1>
+<blockquote>
+<p>対象：自分の <code>127.0.0.1</code> 演習環境、または主催者が明示的に許可したCTF。実IP、Cookie、パスワード、フラグは公開しない。</p>
+<p>この章は <strong>発見 → HTTP再現 → 原因特定 → 方式分類 → 影響評価 → 修正 → 再テスト</strong> の順に、作業中そのまま参照できることを目標にする。コマンドの <code>127.0.0.1:8767</code> は同梱ローカルラボに限定。</p>
+</blockquote>
+<h2>0｜30秒で判断する早見表</h2>
+<table>
+<thead>
+<tr>
+  <th>画面で観測した現象</th>
+  <th>最初に疑うこと</th>
+  <th>比較するもの</th>
+  <th>誤判定の注意</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>'</code> だけで500</td>
+  <td>引用符でSQL文が壊れた</td>
+  <td>通常文字列・特殊文字・エラー詳細</td>
+  <td>500はSQLi成立の証明ではない</td>
+</tr>
+<tr>
+  <td>真条件と偽条件で結果が変わる</td>
+  <td>Boolean-based blind</td>
+  <td>1=1 と 1=2 を同一文脈で比較</td>
+  <td>元の検索条件が真かを固定する</td>
+</tr>
+<tr>
+  <td>応答本文が同じなのに時間差</td>
+  <td>Time-based blind</td>
+  <td>同一条件を複数回測定</td>
+  <td>通信遅延と区別する</td>
+</tr>
+<tr>
+  <td>カラム数エラーが変化</td>
+  <td>UNION条件の推定</td>
+  <td>SELECT列数・型・表示位置</td>
+  <td>2列判明≠2列とも表示可能</td>
+</tr>
+<tr>
+  <td>SQL関連の詳細エラーに値が出る</td>
+  <td>Error-based</td>
+  <td>原因DB関数・エラー内容</td>
+  <td>DBMSの版で動かない関数がある</td>
+</tr>
+<tr>
+  <td>SQLmapが405ばかり出す</td>
+  <td>HTTPメソッド/URL違い</td>
+  <td>Chrome/Burpとの通信差</td>
+  <td>サーバーやアプリの特性を確かめる</td>
+</tr>
+<tr>
+  <td><code>No output</code></td>
+  <td>シェル結果未取得・権限・未実行</td>
+  <td>終了コード、stdout/stderr</td>
+  <td>ファイルが存在しない証拠にはならない</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>1｜事前準備：スコープを定義</h2>
+<p>許可範囲をノートに明記する。</p>
+<pre><code class="language-text">演習名: LOCAL-SQLI-01
+許可されたホスト: 127.0.0.1:8767
+対象機能: /lab/sql/vuln?name=...
+破壊的変更: 実施しない
+保存する証拠: 入力値・HTTPステータス・レスポンス文字列（架空データのみ）
+禁止: 第三者サーバーへの試行、セッション情報のGitHub公開
+</code></pre>
+<p>Burpを使う場合はHTTP historyから <strong>Method / Host / Path / Query / Body / Cookie / Content-Type</strong> を控える。特に GET/POST を誤ると SQLmapに405が出ることがある。ブラウザが描画した文字列がHTTPレスポンスにあるとは限らない。JavaScriptが後で生成した文言ではないか確認する。</p>
+<h2>2｜基本モデル：なぜ入力がSQL構文になるのか</h2>
+<p>安全でない例：</p>
+<pre><code class="language-python">name = request_value
+sql = &quot;SELECT id, name FROM products WHERE name = '&quot; + name + &quot;'&quot;
+</code></pre>
+<p>本来のクエリは文字列リテラル <code>'旅行セット'</code> と比較するだけだが、ユーザー入力に引用符などが混ざるとSQLの <strong>字句解析・構文解析</strong> に作用する。DBはHTTPを知らず、完成したSQLだけを解釈する。失敗の根本原因は「<strong>SQL構造とユーザー入力の境界が消える</strong>」こと。</p>
+<p>安全な代替：</p>
+<pre><code class="language-python">cursor.execute(&quot;SELECT id, name FROM products WHERE name = ?&quot;, (name,))
+</code></pre>
+<p>PDOの場合は <a href="05-php-pdo.html"><code>prepare</code> と <code>:name1</code></a>。<strong><code>prepare()</code> の呼び出しそのものより、動的な値を正しくバインドしているか</strong>が重要。</p>
+<h2>3｜ローカルラボで最初に試す四つの入力</h2>
+<p>起動：リポジトリの <code>security-handbook/</code> で <code>python3 lab/server.py</code>。ブラウザ：<code>http://127.0.0.1:8767/</code>。</p>
+<p>以下は同梱ラボの <strong>架空の商品検索</strong> にだけ使用する値。<code>name</code> はWeb入力欄に相当する。</p>
+<table>
+<thead>
+<tr>
+  <th>番号</th>
+  <th>入力値</th>
+  <th>期待する現象</th>
+  <th>意味</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>A</td>
+  <td><code>Travel Kit</code></td>
+  <td>1件</td>
+  <td>通常値の基準</td>
+</tr>
+<tr>
+  <td>B</td>
+  <td><code>NoSuchItem</code></td>
+  <td>0件</td>
+  <td>通常の不一致</td>
+</tr>
+<tr>
+  <td>C</td>
+  <td><code>' OR '1'='1' -- </code></td>
+  <td>複数件</td>
+  <td>真条件の比較材料</td>
+</tr>
+<tr>
+  <td>D</td>
+  <td><code>' OR '1'='2' -- </code></td>
+  <td>0件</td>
+  <td>偽条件の比較材料</td>
+</tr>
+</tbody>
+</table>
+<p>MySQLでは <code>--</code> コメントに空白などの条件がある。<strong>上表の末尾には空白がある</strong>。このラボはSQLite方言で動くため、別のCTFへそのままコピペして同じ結果になるとは限らない。入力の型・引用符・括弧・WHERE文脈が違えば結果も違う。</p>
+<h3>重要：<code>OR 1=2</code> で「偽」が証明されない場合</h3>
+<p><code>WHERE name='Travel Kit' OR 1=2</code> は商品自体が見つかれば <strong>真</strong>。真偽ペアは元条件を常に偽にできる値で比較するか、元条件を固定して <code>AND</code> の結果を比較する。</p>
+<h3>HTML表示の「1件」「複数」「検索失敗」の差</h3>
+<p>レスポンス本文、HTTP status、文字列長、処理時間を分けて記録。「検索失敗」は0件なのかSQLエラーなのか区別する。通常値・該当なし・構文エラーで3点比較する。</p>
+<h2>4｜Boolean-based blind：一文字ずつ推測する原理</h2>
+<pre><code class="language-text">対象値がASCII値で 100 より大きい？
+       ├─ TRUE  → 検証対象を 101 以上へ狭める
+       └─ FALSE → 検証対象を 100 以下へ狭める
+</code></pre>
+<p>二分探索では範囲を半分ずつ絞る。例えばASCIIの 32〜126（95通り）なら約7回の比較で1文字を推定できる。ただしDB照合順序、NULL、関数の結果、符号化方式に注意。</p>
+<p>概念的なMySQL式（独立したSQL式として読むための例）：</p>
+<pre><code class="language-sql">SELECT ASCII(SUBSTRING('DEMO', 1, 1)) &gt; 70;
+SELECT LENGTH('DEMO') &gt; 3;
+</code></pre>
+<p><code>ASCII()</code> / <code>SUBSTRING()</code> / <code>LENGTH()</code> は値の一部分を条件へ変換する道具。<strong>情報の取得そのものではなく、TRUE/FALSEを繰り返し観測する</strong>のがblind方式。</p>
+<p><strong>確認チェック</strong></p>
+<ul>
+<li class="task-list-item"><input class="task-list-item-checkbox" type="checkbox" disabled/>真/偽が各3回以上安定して再現する</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" type="checkbox" disabled/>0件とSQLエラーを取り違えていない</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" type="checkbox" disabled/>URLエンコードの有無で結果が変わらない</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" type="checkbox" disabled/>応答本文に「真」を表す文字列が確かにある</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" type="checkbox" disabled/>サーバーへ負荷をかけすぎない</li>
+</ul>
+<h2>5｜Time-based blind：HTTP本文が同じでも観測できる場合</h2>
+<p>MySQLのSQL式の <strong>概念例</strong>：</p>
+<pre><code class="language-sql">SELECT IF(1=1, SLEEP(2), 0);
+</code></pre>
+<p>ただし、この構文はDBMS依存であり、たとえばSQLiteにそのまま適用できない。ネットワーク遅延を区別するため、正常リクエストと条件付きリクエストを交互に複数回測定。中央値・分散を記録し、攻撃的な長時間遅延や高並列は避ける。</p>
+<h2>6｜UNION-based：2列なら何を確かめる？</h2>
+<p>UNIONには以下の前提がある。</p>
+<ol>
+<li>左右のSELECTの <strong>出力列数が一致</strong> する。</li>
+<li>対応列の <strong>型に互換性</strong> が必要。</li>
+<li>アプリがどの列を <strong>HTMLに表示するか</strong> 別途確認が必要。</li>
+<li>先頭の元レコードと追加レコードの並びは保証されない。</li>
+</ol>
+<p>MySQL/SQLite両方で読める <strong>独立クエリ</strong>：</p>
+<pre><code class="language-sql">SELECT 'Travel Kit' AS name, 2500 AS price
+UNION ALL
+SELECT 'CTF_TEST' AS name, 0 AS price;
+</code></pre>
+<p>CTFで列数が2列と分かっても、そのうち文字列表示に使えるのがどの列かまでは確定しない。<code>NULL</code> で列数と型の影響を切り分け、画面のテンプレート側も確認する。</p>
+<p><strong>SQLmapの意味</strong>：<code>--technique=U --union-cols=2</code> は「UNION検証を2列に限定」の指定であり、データの表示や取得の保証ではない。</p>
+<h2>7｜Error-based：EXTRACTVALUEとDBエラー</h2>
+<p>古い学習資料で見る <code>EXTRACTVALUE()</code> は、XML/XPathの評価エラーから情報が画面に出る挙動の説明によく登場する。<strong>DBMS、版、関数の有無、エラー処理に依存する</strong>ので、CTFの環境で再確認すること。</p>
+<p>MySQL系の <strong>独立した式</strong> の例：</p>
+<pre><code class="language-sql">SELECT EXTRACTVALUE(1, '~DEMO');
+</code></pre>
+<p>意味：XPathとして解釈できない引数によってエラーが発生し、詳細なDBエラーをHTTP本文へ表示するアプリでは、診断情報が漏れることがある。<code>CONCAT()</code>（文字列連結）、<code>information_schema</code>（DB構造）、<code>LIMIT</code>（対象行）も周辺概念。<strong>サブクエリ・SQL式の成否と、OSファイルの読取り能力は別物</strong>。</p>
+<p>注意：<code>information_schema</code> の綴りは <code>infomation_schema</code> ではない。SQL構文エラー1064、XPathエラー1105、未知の関数1305は意味が異なる。</p>
+<h2>8｜Burp Repeater：観測の証拠を作る</h2>
+<p>GETの架空リクエスト：</p>
+<pre><code class="language-http">GET /lab/sql/vuln?name=Travel%20Kit HTTP/1.1
+Host: 127.0.0.1:8767
+Accept: text/html
+Connection: close
+</code></pre>
+<p><strong>手順</strong>：通常値で200を記録 → Repeaterで <code>name</code> だけ変更 → HTTP statusと本文を並べて比べる → Responseの実文字列を記録 → 実行回数・時刻・結果の再現性を記録。</p>
+<p><strong>POSTの場合</strong>は method と body と Content-Type の両方を同じ通信から保存する。Burpの「Copy to file」などを使って完全なHTTPリクエストを保存すると、SQLmapの<code>-r</code>で利用できる。</p>
+<h2>9｜sqlmapのチートシート：意味を理解して使う</h2>
+<p>以下は<strong>同梱のローカルラボにだけ適用する例</strong>。通常アクセスで動作を確認してから実行する。</p>
+<pre><code class="language-bash"># 基本調査（ローカル専用の検証用URL）
+sqlmap -u 'http://127.0.0.1:8767/lab/sql/vuln?name=Travel%20Kit' \
+  -p name --technique=B --batch --threads=1 --delay=0.2
+
+# Burpで保存した、同じローカルHTTPリクエストを再現
+sqlmap -r request.txt -p name --technique=B --batch -v 3
+
+# SQLmapが送ったリクエストとレスポンスをログへ保存
+sqlmap -r request.txt -p name --technique=B -t traffic.txt -v 3
+</code></pre>
+<p><strong>オプションの意味</strong></p>
+<table>
+<thead>
+<tr>
+  <th>オプション</th>
+  <th>説明</th>
+  <th>失敗時のチェック</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>-u</code></td>
+  <td>URLとパラメータを指定</td>
+  <td>URL先が実際に存在するか</td>
+</tr>
+<tr>
+  <td><code>-r</code></td>
+  <td>Burpの生HTTPリクエスト</td>
+  <td>Cookie/Host/POST bodyが合っているか</td>
+</tr>
+<tr>
+  <td><code>-p name</code></td>
+  <td><code>name</code>キーだけを検証</td>
+  <td><code>name=</code>と書かない</td>
+</tr>
+<tr>
+  <td><code>--technique=B/E/U/T</code></td>
+  <td>Boolean / Error / UNION / Timeに絞る</td>
+  <td>該当DB方言と入力文脈</td>
+</tr>
+<tr>
+  <td><code>--string</code></td>
+  <td>TRUE応答に実際にある文字列</td>
+  <td>JS生成の表示なら原文にない</td>
+</tr>
+<tr>
+  <td><code>--not-string</code></td>
+  <td>FALSE応答の文字列</td>
+  <td>真偽のラベルにエラー表示を混ぜない</td>
+</tr>
+<tr>
+  <td><code>--dbms=MySQL</code></td>
+  <td>DBMSを指定</td>
+  <td>不明なら固定しない</td>
+</tr>
+<tr>
+  <td><code>--union-cols=2</code></td>
+  <td>UNIONの列数範囲を2に限定</td>
+  <td>列の表示有無は別</td>
+</tr>
+<tr>
+  <td><code>--prefix</code>,<code>--suffix</code></td>
+  <td>特定文脈へ組み込む補助</td>
+  <td>引用符/コメントが重複しないか</td>
+</tr>
+<tr>
+  <td><code>--flush-session</code></td>
+  <td>解析セッションを破棄</td>
+  <td>再検出が必要なときだけ</td>
+</tr>
+<tr>
+  <td><code>--batch</code></td>
+  <td>問い合わせを既定値で回答</td>
+  <td>意図しない自動回答に注意</td>
+</tr>
+<tr>
+  <td><code>-t</code></td>
+  <td>HTTP通信ログ保存</td>
+  <td>秘匿値をGitHubに公開しない</td>
+</tr>
+</tbody>
+</table>
+<h3>405 / 500 / not injectable の違い</h3>
+<ul>
+<li><strong>405 Method Not Allowed</strong>：URL/Method不一致が第一候補。ブラウザの実通信と比較。</li>
+<li><strong>500 Internal Server Error</strong>：SQLエラーやアプリ例外など多くの原因。詳細ログが必要。</li>
+<li><strong>not injectable</strong>：sqlmapのその条件・技術では検出できなかった。安全の証明ではない。</li>
+<li><strong>未知のDB関数 1305</strong>：DBMS推測で試した関数がない可能性。「全部失敗」ではない。</li>
+<li><strong>タイムアウト</strong>：過負荷、ネットワーク、レート制限。検証間隔を空ける。</li>
+</ul>
+<h2>10｜DB構造を読む方法と限界</h2>
+<pre><code class="language-text">データベース → テーブル → カラム → 行
+      例：demo_db → products → name,price → Travel Kit,2500
+</code></pre>
+<p>MySQLの <code>information_schema.tables</code> / <code>columns</code> は <strong>メタデータ</strong>。その存在から「全データを読める」とは結論づけられない。DB接続ユーザーの権限・ビュー・アプリのSQLi文脈に左右される。既知の架空データだけを使い、フラグや認証情報はリポジトリへ載せない。</p>
+<h2>11｜DBとOSの境界：FILE・secure_file_priv</h2>
+<ul>
+<li><code>@@datadir</code> はデータファイル配置先。Webルートとは限らない。</li>
+<li><code>@@secure_file_priv</code> が空文字列なら、この設定によるディレクトリ制限がないことを意味するが、FILE権限やOS権限は必要。</li>
+<li><code>NULL</code> は当該入出力機能を制限する設定。空文字列とは異なる。</li>
+<li>SQLiが見つかっても <strong>OSシェルを取得できるとは限らない</strong>。実DBサーバーとWebサーバーが別コンテナのこともある。</li>
+<li><code>find / -type f -name 'sample.txt'</code> は <strong>OSでのファイル名検索</strong>。SQLmapの <code>--search</code> はDB名等の検索で別物。</li>
+</ul>
+<p><strong>ファイル名検索の学習</strong>（ローカルの安全なフォルダだけ）：</p>
+<pre><code class="language-bash">mkdir -p /tmp/ctf-example
+printf 'example\n' &gt; /tmp/ctf-example/sample.txt
+find /tmp/ctf-example -type f -name 'sample.txt'
+</code></pre>
+<p>DB権限を起点としたWebシェル配置や任意コマンド実行は、複数の権限境界が破れる危険な連鎖であり、本公開教材では <strong>成立条件・検知・防御設計</strong> を中心に扱う。</p>
+<h2>12｜修正手順：同じURLで比較する</h2>
+<p><strong>危険</strong>（文字列連結）：</p>
+<pre><code class="language-php">$sql = &quot;SELECT * FROM products WHERE name = '&quot; . $name . &quot;'&quot;;
+</code></pre>
+<p><strong>安全</strong>（PDO名前付きパラメータ）：</p>
+<pre><code class="language-php">$stmt = $pdo-&gt;prepare(
+  'SELECT * FROM products WHERE name = :name1'
+);
+$stmt-&gt;bindValue(':name1', $name, PDO::PARAM_STR);
+$stmt-&gt;execute();
+</code></pre>
+<p><strong>加えて必要</strong>：識別子の許可リスト、認可チェック、DB最小権限、詳細エラーの利用者向け非表示。<code>prepare</code>が1か所あるだけでサイト全体が安全になるわけではない。</p>
+<h3>修正後の回帰テスト</h3>
+<table>
+<thead>
+<tr>
+  <th>ケース</th>
+  <th>安全実装の期待値</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>正常な商品名</td>
+  <td>該当商品のみ</td>
+</tr>
+<tr>
+  <td>検索対象なし</td>
+  <td>0件</td>
+</tr>
+<tr>
+  <td><code>' OR '1'='1' -- </code></td>
+  <td>その文字列に一致する商品がなければ0件</td>
+</tr>
+<tr>
+  <td>引用符だけ</td>
+  <td>0件、SQL構文エラーを画面に出さない</td>
+</tr>
+<tr>
+  <td>空文字列</td>
+  <td>仕様通り扱う</td>
+</tr>
+<tr>
+  <td>不正な <code>sort</code> キー</td>
+  <td>許可済みのデフォルト列にフォールバック</td>
+</tr>
+</tbody>
+</table>
+<h2>13｜CTF現場チェックリスト</h2>
+<ul>
+<li class="task-list-item"><input class="task-list-item-checkbox" type="checkbox" disabled/>ルールと許可対象URLを記録した</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" type="checkbox" disabled/>通常入力でWeb機能を理解した</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" type="checkbox" disabled/>GET/POST、パラメータ、body、Cookieを確認した</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" type="checkbox" disabled/>HTTP応答の生データを観測した</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" type="checkbox" disabled/>SQLi方式を確定前に断定していない</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" type="checkbox" disabled/>同じ条件で複数回再現した</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" type="checkbox" disabled/>DBMS/バージョンは根拠とともに記録した</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" type="checkbox" disabled/>SQLmapのオプションの意味を説明できる</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" type="checkbox" disabled/>DBデータとOSファイル/権限を区別できる</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" type="checkbox" disabled/>フラグ、認証情報、Cookie、実IPを公開資料から除去した</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" type="checkbox" disabled/>修正策を記載した</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" type="checkbox" disabled/>安全実装で同じ条件を再テストした</li>
+</ul>
+<h2>14｜参考文献・根拠</h2>
+<ul>
+<li><a href="https://portswigger.net/web-security/sql-injection">PortSwigger SQL injection</a> — 概念とラボ</li>
+<li><a href="https://portswigger.net/web-security/sql-injection/cheat-sheet">PortSwigger SQLi Cheat Sheet</a> — DBMSごとの式の違い</li>
+<li><a href="https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html">OWASP SQL Injection Prevention</a> — パラメータ化と最小権限</li>
+<li><a href="https://github.com/sqlmapproject/sqlmap/wiki/Usage">SQLmap Usage</a> — コマンドオプション</li>
+<li><a href="https://github.com/sqlmapproject/sqlmap/wiki/Techniques">SQLmap Techniques</a> — 検出方式</li>
+<li><a href="https://dev.mysql.com/doc/refman/8.4/en/xml-functions.html">MySQL XML Functions</a> — XML/XPath関数の仕様</li>
+<li><a href="https://www.php.net/manual/ja/pdo.prepare.php">PHP PDO::prepare</a> — 名前付きプレースホルダー</li>
+</ul>
+<p><strong>証拠の強さ</strong>：上記は一般技術・仕様の根拠。あなたが検証しているCTFでの成立を裏付けるには、HTTP応答・再現条件・バージョンなどの独立した観測が必要。</p>
+</article><p class="footer">2026-10-24 / 教育・許可された検証専用。実データは公開しない。</p></main></div></body></html>

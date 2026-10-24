@@ -1,0 +1,99 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="description" content="CTFで学ぶSQLインジェクション、XSS、Burp Suite、PHP、MySQLの実践教材"><link rel="stylesheet" href="assets/style.css"><title>02｜Burp Suite → SQLmap — HTTPの再現と診断 | Web Security Lab</title></head><body><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">◈ Web Security Lab</a><p class="tag">CTF / THEORY / DEFENSE</p><div class="menulist"><a class="menu" href="index.html">⌂ 学習メニュー</a><a class="menu" href="README.html">📚 全体README</a><a class="menu" href="00-http-trust-boundaries.html">00｜HTTPと「データが命令になる」境界</a>
+<a class="menu" href="01-sqli-ctf-field-manual.html">SQLインジェクション：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="01-sqli.html">01｜SQL Injection（SQLi）— 理論、観測、原因、対策</a>
+<a class="menu" href="02-burp-sqlmap.html">02｜Burp Suite → SQLmap — HTTPの再現と診断</a>
+<a class="menu" href="03-mysql-files-os.html">03｜MySQLとファイルシステム・OSシェルの権限境界</a>
+<a class="menu" href="04-xss.html">04｜XSS：反射型・蓄積型・DOM-basedを「入力→HTTP応答→JS」で理解</a>
+<a class="menu" href="05-php-pdo.html">05｜PHP PDO — `prepare()` + `:name1` がなぜSQLiを防ぐのか</a>
+<a class="menu" href="06-command-injection.html">06｜OS Command Injection — DNS照会を例に</a>
+<a class="menu" href="07-php2shell-2026.html">07｜PHP2Shell（2026年10月公開）とDBの関係</a>
+<a class="menu" href="08-ctf-method.html">08｜CTF調査の方法論と「高難度CTF」</a>
+<a class="menu" href="09-error-troubleshooting.html">09｜エラー・表示の読み方 — 一覧</a>
+<a class="menu" href="10-attack-chain-defense.html">10｜攻撃連鎖と多層防御</a>
+<a class="menu" href="11-code-review.html">11｜PHP Webアプリのコードレビュー演習 — 発見→原因→修正</a>
+<a class="menu" href="12-case-study.html">12｜匿名化CTFケーススタディ — 調査結果と不確実性</a>
+<a class="menu" href="13-xss-ctf-field-manual.html">XSS：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="14-os-command-ctf-field-manual.html">OSコマンドインジェクション：調査・原因・安全実装</a>
+<a class="menu" href="15-auth-access-csrf-file.html">認証・認可・CSRF・ファイルアップロード：CTF調査メモ</a>
+<a class="menu" href="16-logging-incident-response.html">CTFから実務へ：ログ・検知・インシデント対応</a>
+<a class="menu" href="17-ctf-scenarios-and-answers.html">CTF問題集：答え合わせと学習目的</a><a class="menu" href="18-http-manual-curl.html">18｜HTTPをコマンドで読む・再現する</a><a class="menu" href="19-os-command-manual.html">19｜OSコマンド注入・シェル文法</a><a class="menu" href="20-xss-manual-contexts.html">20｜XSSの文脈別・DOM手動検証</a><a class="menu" href="21-dirb-manual-discovery.html">21｜DIRB系の手動パス探索</a><a class="menu" href="22-burp-without-burp.html">22｜Burpの通信解析をコマンドで再現</a><a class="menu" href="23-ctf-tactics-decision-trees.html">23｜CTF高難度対応・判断木</a><a class="menu" href="24-other-web-ctf-reasoning.html">24｜認証・認可・アップロード等</a><a class="menu" href="25-manual-drills.html">25｜手動CTF問題集・解説付き</a><a class="menu" href="CTF_MANUAL_QUICKREF.html">★ 手動コマンド早見表</a></div></aside><main class="main"><p class="topnav"><a href="index.html">← 学習メニューへ戻る</a></p><article class="article"><h1>02｜Burp Suite → SQLmap — HTTPの再現と診断</h1>
+<h2>役割の違い</h2>
+<ul>
+<li><strong>Burp Proxy / HTTP history</strong>：ブラウザとサーバーの間を観測し、HTTPリクエストとレスポンスの事実を保存。</li>
+<li><strong>Burp Repeater</strong>：同じリクエストの入力だけを変え、応答を比較。</li>
+<li><strong>sqlmap</strong>：許可された演習範囲でSQLiを検出・検証する自動化ツール。応答差・DB関数などを使うが、魔法のOS権限ではない。</li>
+</ul>
+<pre><code class="language-mermaid">sequenceDiagram
+ Browser-&gt;&gt;Burp: 検索リクエスト
+ Burp-&gt;&gt;App: GET/POSTとパラメータ
+ App--&gt;&gt;Burp: HTTP応答(200/405/500等)
+ Burp--&gt;&gt;Browser: HTML/JSON
+ Note over Burp: 許可された通信だけ匿名化して保存
+ Burp-&gt;&gt;sqlmap: request.txt
+ sqlmap-&gt;&gt;App: 追加の検証リクエスト
+ App--&gt;&gt;sqlmap: 応答の差を観測
+</code></pre>
+<h2>やり方（許可されたCTF限定）</h2>
+<ol>
+<li>ブラウザNetworkで実際の <strong>Method/URL/Content-Type/Body</strong> を確認。</li>
+<li>Burp <code>Proxy &gt; HTTP history</code> から該当リクエストを選び <code>Send to Repeater</code>。通常値・真・偽の差を見比べる。</li>
+<li>Burpで元の<strong>完全なリクエスト</strong>をテキストへ保存。Cookie/CSRF等を保持する場合は厳重に管理（公開しない）。</li>
+<li>sqlmapへ <code>-r</code> と <code>-p</code> を渡す。<code>--string</code> は実際のHTTPレスポンスにその文字列が存在するときだけ使う。</li>
+<li><code>--technique=B</code> はBoolean-basedに絞る。前回のCTFの方式がほかの演習でも同じとは限らない。</li>
+<li>確認済み結果をレポートし、修正後に応答差が消えたことをチェック。</li>
+</ol>
+<h3>読むための引数例（架空HTTPリクエスト）</h3>
+<pre><code class="language-bash"># HTTPリクエストを保存済みの、許可された演習環境だけで使用
+sqlmap -r request.txt -p name --technique=B \
+  --string=&quot;複数&quot; --batch -v 3
+</code></pre>
+<table>
+<thead>
+<tr>
+  <th>引数</th>
+  <th>説明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>-r request.txt</code></td>
+  <td>Burp保存のHTTPリクエスト</td>
+</tr>
+<tr>
+  <td><code>-p name</code></td>
+  <td><code>name=</code> でなくパラメータキー <code>name</code></td>
+</tr>
+<tr>
+  <td><code>--technique=B</code></td>
+  <td>Boolean-basedだけを検証</td>
+</tr>
+<tr>
+  <td><code>--string</code></td>
+  <td>真と見なす応答本文の目印。UI表示と別の場合に注意</td>
+</tr>
+<tr>
+  <td><code>--prefix</code>, <code>--suffix</code></td>
+  <td>特定SQL構造での境界指定。自動判定より適切なことを確認</td>
+</tr>
+<tr>
+  <td><code>--flush-session</code></td>
+  <td>キャッシュしたセッションを消し検出をやり直す</td>
+</tr>
+<tr>
+  <td><code>-v 3</code></td>
+  <td>詳細度を上げる（レベルにより表示内容が変わる）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>注意</strong>：<code>--batch</code>は自動で対話へ既定回答する。破壊的機能を含む操作では安易に使わない。</p>
+<h2>前回のCTFで学んだ論点（一般化）</h2>
+<ul>
+<li>GETと想定していたが実際に405が出る → <strong>個々のHTTPリクエスト</strong>を確認。ステータスだけで原因を決めない。</li>
+<li><code>AURORA_VERSION</code>など存在しない関数による500 → DBMS判別中のテスト由来の場合がある。<strong>500 = 乗っ取り成功</strong>ではない。</li>
+<li>真が「複数」、偽が「検索失敗」 → 0件の結果とSQL例外が同じ表示になっていないかも検証。</li>
+<li><code>Werkzeug/Python</code> はWeb層の情報。裏側のDBはMySQLという構成も普通にあり得る。</li>
+</ul>
+<h2>証拠の残し方</h2>
+<p><code>templates/ctf-finding-template.md</code> を使用。個人情報を含まないようResponseの本文、Cookie、Authorizationヘッダー、URLの実IP、フラグを編集する。</p>
+<p><strong>根拠</strong>：<a href="https://portswigger.net/burp/documentation/desktop/tools/proxy/http-history">Burp HTTP history</a>、<a href="https://portswigger.net/burp/documentation/desktop/tools/repeater">Burp Repeater</a>、<a href="https://github.com/sqlmapproject/sqlmap/wiki/Usage">sqlmap Usage</a>。</p>
+</article><p class="footer">2026-10-24 / 教育・許可された検証専用。実データは公開しない。</p></main></div></body></html>

@@ -1,0 +1,127 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>21｜DIRB系の手動パス探索 | Web Security Lab</title><link rel="stylesheet" href="assets/style.css"></head><body><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">◈ Web Security Lab</a><p class="tag">CTF / THEORY / DEFENSE</p><div class="menulist"><a class="menu" href="index.html">⌂ 学習メニュー</a><a class="menu" href="README.html">📚 全体README</a><a class="menu" href="00-http-trust-boundaries.html">00｜HTTPと「データが命令になる」境界</a>
+<a class="menu" href="01-sqli-ctf-field-manual.html">SQLインジェクション：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="01-sqli.html">01｜SQL Injection（SQLi）— 理論、観測、原因、対策</a>
+<a class="menu" href="02-burp-sqlmap.html">02｜Burp Suite → SQLmap — HTTPの再現と診断</a>
+<a class="menu" href="03-mysql-files-os.html">03｜MySQLとファイルシステム・OSシェルの権限境界</a>
+<a class="menu" href="04-xss.html">04｜XSS：反射型・蓄積型・DOM-basedを「入力→HTTP応答→JS」で理解</a>
+<a class="menu" href="05-php-pdo.html">05｜PHP PDO — `prepare()` + `:name1` がなぜSQLiを防ぐのか</a>
+<a class="menu" href="06-command-injection.html">06｜OS Command Injection — DNS照会を例に</a>
+<a class="menu" href="07-php2shell-2026.html">07｜PHP2Shell（2026年10月公開）とDBの関係</a>
+<a class="menu" href="08-ctf-method.html">08｜CTF調査の方法論と「高難度CTF」</a>
+<a class="menu" href="09-error-troubleshooting.html">09｜エラー・表示の読み方 — 一覧</a>
+<a class="menu" href="10-attack-chain-defense.html">10｜攻撃連鎖と多層防御</a>
+<a class="menu" href="11-code-review.html">11｜PHP Webアプリのコードレビュー演習 — 発見→原因→修正</a>
+<a class="menu" href="12-case-study.html">12｜匿名化CTFケーススタディ — 調査結果と不確実性</a>
+<a class="menu" href="13-xss-ctf-field-manual.html">XSS：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="14-os-command-ctf-field-manual.html">OSコマンドインジェクション：調査・原因・安全実装</a>
+<a class="menu" href="15-auth-access-csrf-file.html">認証・認可・CSRF・ファイルアップロード：CTF調査メモ</a>
+<a class="menu" href="16-logging-incident-response.html">CTFから実務へ：ログ・検知・インシデント対応</a>
+<a class="menu" href="17-ctf-scenarios-and-answers.html">CTF問題集：答え合わせと学習目的</a><a class="menu" href="18-http-manual-curl.html">18｜HTTPをコマンドで読む・再現する</a><a class="menu" href="19-os-command-manual.html">19｜OSコマンド注入・シェル文法</a><a class="menu" href="20-xss-manual-contexts.html">20｜XSSの文脈別・DOM手動検証</a><a class="menu" href="21-dirb-manual-discovery.html">21｜DIRB系の手動パス探索</a><a class="menu" href="22-burp-without-burp.html">22｜Burpの通信解析をコマンドで再現</a><a class="menu" href="23-ctf-tactics-decision-trees.html">23｜CTF高難度対応・判断木</a><a class="menu" href="24-other-web-ctf-reasoning.html">24｜認証・認可・アップロード等</a><a class="menu" href="25-manual-drills.html">25｜手動CTF問題集・解説付き</a><a class="menu" href="CTF_MANUAL_QUICKREF.html">★ 手動コマンド早見表</a></div></aside><main class="main"><p class="topnav"><a href="index.html">← 学習メニューへ戻る</a></p><article class="article"><h1>21｜DIRB／DirBusterの原理：HTTPでパス探索を手作業で理解する</h1>
+<blockquote>
+<p>「dirp」は文脈上、Webディレクトリ探索ツールの <strong>DIRB／DirBuster（ディルブ）系</strong>として扱う。パス探索は小規模な許可済CTFでのみ。公開サイトを無差別に総当たりしない。</p>
+</blockquote>
+<h2>0. DIRBは何をしているのか</h2>
+<p>DIRB、DirBuster、dirsearch、Gobusterなどの違いは主に使い勝手や探索速度で、<strong>原理は「候補パスへHTTPを送り、レスポンスを比較する」</strong>こと。ツールがなくても理解できる。</p>
+<pre><code class="language-text">候補パス： /, /about, /lab/map/public, /lab/map/hidden, /no-such-path
+                     ↓
+HTTP GET を送信 → 200 / 301 / 403 / 404 / 405 + 本文長 + Location
+                     ↓
+既知の404応答を基準に「違うもの」を調べる
+</code></pre>
+<p><code>200</code>をすべて発見、<code>403</code>を不在、<code>302</code>を成功とするのは誤り。URLの後処理、アクセス制御、ログイン状態、soft404を区別する。</p>
+<h2>1. ステータスだけを手動比較</h2>
+<pre><code class="language-bash">BASE='http://127.0.0.1:8767'
+for path in / /lab/map/public /lab/map/forbidden /lab/map/absent; do
+  curl -sS -o /dev/null -w &quot;$path status=%{http_code} bytes=%{size_download}\n&quot; &quot;$BASE$path&quot;
+done
+</code></pre>
+<p>存在しない <code>/lab/map/absent</code> を<strong>基準（ベースライン）</strong>にする。同梱ラボのルートは架空の案内文だけ。実際の管理コンソールや秘匿ファイルは含まない。</p>
+<h2>2. 小さな辞書を「1秒あけて」確認（ローカル専用）</h2>
+<pre><code class="language-bash"># テスト候補を最小限にし、対象の負荷を抑える
+printf '%s\n' 'public' 'forbidden' 'absent' &gt; paths.txt
+while IFS= read -r p; do
+  curl -sS -o /dev/null \
+    -w &quot;$p status=%{http_code} bytes=%{size_download}\n&quot; \
+    &quot;http://127.0.0.1:8767/lab/map/$p&quot;
+  sleep 1
+done &lt; paths.txt
+</code></pre>
+<p><strong>重要</strong>：HTTPで参照しているのはOSの<code>/</code>以下のファイルとは限らない。Webフレームワークのルーティング、逆プロキシ、静的配信設定がURLと処理の対応を決める。<code>find / -name</code>とは目的もアクセス権限も違う。</p>
+<h2>3. 「発見」の解釈を間違えない</h2>
+<table>
+<thead>
+<tr>
+  <th>見たもの</th>
+  <th>意味の可能性</th>
+  <th>必ず比較するもの</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>200 + 本文が固定</td>
+  <td>通常ページまたはsoft404</td>
+  <td>不存在パスと長さ・本文を比較</td>
+</tr>
+<tr>
+  <td>301/308</td>
+  <td>末尾スラッシュやHTTPS強制</td>
+  <td>Locationを確認</td>
+</tr>
+<tr>
+  <td>302</td>
+  <td>ログインへ転送など</td>
+  <td>Location、Cookie、認証状態</td>
+</tr>
+<tr>
+  <td>403</td>
+  <td>ルートがあるが禁止、または一律拒否</td>
+  <td>他の禁止パスとの違い</td>
+</tr>
+<tr>
+  <td>404</td>
+  <td>ルーティング不一致、非公開、マスキング</td>
+  <td>不存在パスと比較</td>
+</tr>
+<tr>
+  <td>405</td>
+  <td>パスは処理するがメソッドが違う</td>
+  <td><code>Allow</code>を確認</td>
+</tr>
+<tr>
+  <td>500</td>
+  <td>アプリのバグや入力処理ミス</td>
+  <td>エラーに重要情報がないか（公開禁止）</td>
+</tr>
+</tbody>
+</table>
+<h2>4. リンクから候補語を「推測」する論理</h2>
+<p>初級：トップページのHTML内の<code>href</code>や<code>src</code>を確認する。</p>
+<p>中級：JavaScriptが呼ぶAPIルート、<code>robots.txt</code>の記述、リダイレクト先の存在を観察する。ただし<strong>robots.txtはアクセス制御ではない</strong>。</p>
+<p>上級：URLの命名規則、認証前後のパス差、同じルートにGET/POSTを送った場合の応答差を論理的に分類する。大量の辞書より、観測から少数候補を作る。</p>
+<pre><code class="language-bash">curl -i 'http://127.0.0.1:8767/robots.txt'
+curl -i 'http://127.0.0.1:8767/lab/map/public'
+curl -i 'http://127.0.0.1:8767/lab/map/absent'
+</code></pre>
+<h2>5. CTFでありがちな落とし穴</h2>
+<ul>
+<li>リダイレクトを自動追跡すると、元パスの302を見落とすことがある。まず<code>-i</code>で<code>Location</code>を確認。</li>
+<li>gzipなどの圧縮、動的時刻、セッションIDで本文長が変化する。サイズ1つだけに頼らない。</li>
+<li>HTTP/1.1とHTTP/2、URLの大文字小文字、末尾の<code>/</code>、URLエンコード、パス正規化の違い。</li>
+<li>403/404が意図的に均一化されていることもある。禁止先の探索には権限が必要。</li>
+<li>何も見つからなくても対象の安全性を保証しない。</li>
+</ul>
+<h2>6. 予習・復習のチェック</h2>
+<ol>
+<li>ツールを使わず、4つのURLにGETを送り、ステータスと本文サイズを比較できる。</li>
+<li>200をsoft404と区別できる。</li>
+<li>301/302で元のLocationを確認できる。</li>
+<li>405を入力ミスだけと決めず、メソッドの違いを考察できる。</li>
+<li>WebのパスとOSファイルシステムを混同しない。</li>
+</ol>
+<h2>一次資料</h2>
+<ul>
+<li><a href="https://wstg.owasp.org/latest/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management/04-Review_Old_Backup_and_Unreferenced_Files_for_Sensitive_Information/">OWASP WSTG: Unreferenced files</a></li>
+<li><a href="https://community.owasp.org/attacks/Forced_browsing">OWASP Forced browsing</a></li>
+<li><a href="https://www.kali.org/tools/dirb/">Kali DIRBの公式説明</a></li>
+</ul>
+</article><p class="footer"><a href="README.html">教材README</a> · <a href="SOURCES.html">根拠資料</a> · <a href="CTF_MANUAL_QUICKREF.html">コマンド早見表</a></p></main></div></body></html>

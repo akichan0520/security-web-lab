@@ -1,0 +1,224 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>20｜XSSの文脈別・DOM手動検証 | Web Security Lab</title><link rel="stylesheet" href="assets/style.css"></head><body><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">◈ Web Security Lab</a><p class="tag">CTF / THEORY / DEFENSE</p><div class="menulist"><a class="menu" href="index.html">⌂ 学習メニュー</a><a class="menu" href="README.html">📚 全体README</a><a class="menu" href="00-http-trust-boundaries.html">00｜HTTPと「データが命令になる」境界</a>
+<a class="menu" href="01-sqli-ctf-field-manual.html">SQLインジェクション：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="01-sqli.html">01｜SQL Injection（SQLi）— 理論、観測、原因、対策</a>
+<a class="menu" href="02-burp-sqlmap.html">02｜Burp Suite → SQLmap — HTTPの再現と診断</a>
+<a class="menu" href="03-mysql-files-os.html">03｜MySQLとファイルシステム・OSシェルの権限境界</a>
+<a class="menu" href="04-xss.html">04｜XSS：反射型・蓄積型・DOM-basedを「入力→HTTP応答→JS」で理解</a>
+<a class="menu" href="05-php-pdo.html">05｜PHP PDO — `prepare()` + `:name1` がなぜSQLiを防ぐのか</a>
+<a class="menu" href="06-command-injection.html">06｜OS Command Injection — DNS照会を例に</a>
+<a class="menu" href="07-php2shell-2026.html">07｜PHP2Shell（2026年10月公開）とDBの関係</a>
+<a class="menu" href="08-ctf-method.html">08｜CTF調査の方法論と「高難度CTF」</a>
+<a class="menu" href="09-error-troubleshooting.html">09｜エラー・表示の読み方 — 一覧</a>
+<a class="menu" href="10-attack-chain-defense.html">10｜攻撃連鎖と多層防御</a>
+<a class="menu" href="11-code-review.html">11｜PHP Webアプリのコードレビュー演習 — 発見→原因→修正</a>
+<a class="menu" href="12-case-study.html">12｜匿名化CTFケーススタディ — 調査結果と不確実性</a>
+<a class="menu" href="13-xss-ctf-field-manual.html">XSS：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="14-os-command-ctf-field-manual.html">OSコマンドインジェクション：調査・原因・安全実装</a>
+<a class="menu" href="15-auth-access-csrf-file.html">認証・認可・CSRF・ファイルアップロード：CTF調査メモ</a>
+<a class="menu" href="16-logging-incident-response.html">CTFから実務へ：ログ・検知・インシデント対応</a>
+<a class="menu" href="17-ctf-scenarios-and-answers.html">CTF問題集：答え合わせと学習目的</a><a class="menu" href="18-http-manual-curl.html">18｜HTTPをコマンドで読む・再現する</a><a class="menu" href="19-os-command-manual.html">19｜OSコマンド注入・シェル文法</a><a class="menu" href="20-xss-manual-contexts.html">20｜XSSの文脈別・DOM手動検証</a><a class="menu" href="21-dirb-manual-discovery.html">21｜DIRB系の手動パス探索</a><a class="menu" href="22-burp-without-burp.html">22｜Burpの通信解析をコマンドで再現</a><a class="menu" href="23-ctf-tactics-decision-trees.html">23｜CTF高難度対応・判断木</a><a class="menu" href="24-other-web-ctf-reasoning.html">24｜認証・認可・アップロード等</a><a class="menu" href="25-manual-drills.html">25｜手動CTF問題集・解説付き</a><a class="menu" href="CTF_MANUAL_QUICKREF.html">★ 手動コマンド早見表</a></div></aside><main class="main"><p class="topnav"><a href="index.html">← 学習メニューへ戻る</a></p><article class="article"><h1>20｜XSS：HTMLパーサー・JavaScript・DOMを手で追うCTFマニュアル</h1>
+<blockquote>
+<p>対象は同梱のローカル演習または許可されたCTF。証明は画面内の無害なテキスト変更・<code>alert(1)</code>などに限定。Cookie送信や他人のセッション取得を行わない。</p>
+</blockquote>
+<h2>0. XSSは「いつ・どのパーサーが・何として解釈するか」</h2>
+<p>XSSはSQLiと違ってブラウザ側で起こる。次の5つを<strong>別々に</strong>観測すること。</p>
+<pre><code class="language-text">入力値 → HTTP Request → HTTP Response (生HTML)
+      → HTMLパーサー → JavaScript → DOM → 画面
+</code></pre>
+<p>例： <code>?name=CTF_MARK_824</code> を開き、<strong>生レスポンスにマーカーがあるか</strong>、ElementsのDOMにあるか、描画画面にあるかをそれぞれ確認する。生レスポンスにないがDOMに現れたら、ページのJavaScriptが作った可能性を疑う（それだけではDOM XSS成立の証明ではない）。</p>
+<h2>1. 反射型・蓄積型・DOM型の発生場所</h2>
+<table>
+<thead>
+<tr>
+  <th>類型</th>
+  <th>入力の移動先</th>
+  <th>判定の手掛かり</th>
+  <th>ありがちな誤解</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Reflected</td>
+  <td>HTTPレスポンスに埋め込まれる</td>
+  <td>リクエストと直後レスポンスの対応</td>
+  <td>画面に出ただけでXSS成立と断定</td>
+</tr>
+<tr>
+  <td>Stored</td>
+  <td>DBや記録領域へ保存され、後で表示</td>
+  <td>再読込や別セッションでも残る</td>
+  <td><code>INSERT</code>が安全ならXSSも防げる</td>
+</tr>
+<tr>
+  <td>DOM-based</td>
+  <td>JSがsource→sinkへ値を渡す</td>
+  <td>生HTMLとDOM差、JSコードの追跡</td>
+  <td><code>location.search</code>の存在だけで脆弱と判断</td>
+</tr>
+</tbody>
+</table>
+<h3>重要：反射型とDOM型は排他的ではない</h3>
+<p>レスポンス中へ反射された値を、さらにJSが <code>innerHTML</code> へ移動すれば、両者が組み合わさる。名前の暗記より <strong>source → transformation → sink</strong> を追う。</p>
+<h2>2. 検証の順番（必ず段階を踏む）</h2>
+<pre><code class="language-text">STEP 1: CTF_MARK_824                      // 一意な目印
+STEP 2: &lt;b&gt;CTF_MARK_824&lt;/b&gt;               // HTMLとして解析されるか
+STEP 3: &lt;script&gt;alert(1)&lt;/script&gt;         // 実行文脈に入るか（許可済ラボのみ）
+</code></pre>
+<p>同梱ラボでHTTPレスポンスを比較する：</p>
+<pre><code class="language-bash">curl -sS -G 'http://127.0.0.1:8767/lab/xss/vuln' \
+  --data-urlencode 'name=&lt;b&gt;CTF_MARK_824&lt;/b&gt;'
+
+curl -sS -G 'http://127.0.0.1:8767/lab/xss/safe' \
+  --data-urlencode 'name=&lt;b&gt;CTF_MARK_824&lt;/b&gt;'
+</code></pre>
+<p>安全版は <code>&amp;lt;b&amp;gt;...</code> といったエンティティに変換される。<code>&lt;b&gt;</code>で太字になるのは<strong>HTMLインジェクション</strong>の手掛かりだが、JavaScript実行まで証明したわけではない。</p>
+<h2>3. XSSの出力文脈は5種類以上</h2>
+<table>
+<thead>
+<tr>
+  <th>入る場所</th>
+  <th>出力例（概念）</th>
+  <th>見ること</th>
+  <th>正しい防御</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>HTMLテキスト</td>
+  <td><code>&lt;p&gt;VALUE&lt;/p&gt;</code></td>
+  <td><code>&lt;</code> <code>&gt;</code> がタグとして解析されるか</td>
+  <td>HTML本文エンコード</td>
+</tr>
+<tr>
+  <td>HTML属性</td>
+  <td><code>&lt;input value=&quot;VALUE&quot;&gt;</code></td>
+  <td>引用符が終わるか、属性名へ混入するか</td>
+  <td><strong>引用符を付け</strong>属性エンコード</td>
+</tr>
+<tr>
+  <td>JavaScript文字列</td>
+  <td><code>&lt;script&gt;const q=&quot;VALUE&quot;;&lt;/script&gt;</code></td>
+  <td>JS文字列として正しくエンコードか</td>
+  <td>値をJSONとしてシリアライズし適切に埋込</td>
+</tr>
+<tr>
+  <td>URL属性</td>
+  <td><code>&lt;a href=&quot;VALUE&quot;&gt;</code></td>
+  <td>URLスキーム、URLエンコード、属性エンコード</td>
+  <td>http/https許可・属性エンコード</td>
+</tr>
+<tr>
+  <td>DOM HTML sink</td>
+  <td><code>element.innerHTML = VALUE</code></td>
+  <td>JSからHTMLパーサーを呼ぶか</td>
+  <td><code>textContent</code> / 安全なDOM API</td>
+</tr>
+<tr>
+  <td>CSS属性など</td>
+  <td><code>style=&quot;...VALUE...&quot;</code></td>
+  <td>CSS文脈</td>
+  <td>任意の動的CSSを避け、限定許可リスト</td>
+</tr>
+</tbody>
+</table>
+<p><strong><code>htmlspecialchars()</code>万能説は誤り</strong>。HTML本文に出力するなら適切だが、JS・URL・CSS文脈には別の扱いが必要。</p>
+<h2>4. DOM操作の位置と実行時点</h2>
+<p>以前のCTFで「3番目の<code>&lt;p&gt;</code>を書き換える」が目標だった場合、DOMが読み込まれた時点で次のように指定できる。</p>
+<pre><code class="language-javascript">const ps = document.querySelectorAll('p');
+if (ps.length &gt;= 3) ps[2].textContent = 'CTF成功';
+</code></pre>
+<ul>
+<li><code>[2]</code> は<strong>3番目</strong>。<code>NodeList</code>は0から始まる。</li>
+<li><code>getElementById('msg3')</code> はIDがある場合に使用可能。<strong>同じタグの3番目と同じ意味ではない</strong>。</li>
+<li><code>textContent</code> はテキストとして代入。<code>innerHTML</code> はHTMLとして解析し、XSSのsinkとなり得る。</li>
+<li><code>DOMContentLoaded</code> より前に対象要素が存在しない場合、対象が<code>null</code>/未取得になり得る。</li>
+<li>DevTools ElementsでのDOM変更はHTTPレスポンスやサーバーのファイルを書き換えない。</li>
+</ul>
+<h3>「URLにJavaScriptを書く」だけでは動かない</h3>
+<p><code>http://127.0.0.1:8767/test.html?name=...</code> のようなURLを作っても、ページが入力をレスポンスに埋め込むかJSで取り込んで実行可能なsinkへ渡す仕組みがなければコードは実行されない。URLパラメータやfragmentの名前は<strong>HTML/JS側の処理から特定する</strong>。CTFのフラグがURL全文なら、開き直して同じ挙動が再現することを確認する。</p>
+<h2>5. source・sinkの実例（安全／危険）</h2>
+<pre><code class="language-javascript">// source：ユーザーが変えられるURL値
+const q = new URLSearchParams(location.search).get('q') ?? '';
+
+// 安全：単なる文字列として表示
+const el = document.getElementById('result');
+el.textContent = q;
+
+// 危険になり得る設計：HTMLとして解析する
+// el.innerHTML = q;
+</code></pre>
+<p><code>URLSearchParams</code> は単にURLを解析しているだけで防御ではない。<code>innerHTML</code>はHTMLを解析し、ユーザーの値を渡すと問題になる。<strong>sinkに届くまでの変換を追うことが核心</strong>。ページが <code>textContent</code> へ入れているなら、同じ入力によるHTML実行は原則成立しない。</p>
+<h2>6. 実際のHTTPとDOMを切り分けるコマンド</h2>
+<pre><code class="language-bash"># 生HTMLに文字列が反射しているかを確認
+curl -sS -G 'http://127.0.0.1:8767/lab/xss/vuln' \
+  --data-urlencode 'name=CTF_MARK_824' | grep -o 'CTF_MARK_824'
+
+# URLクエリを安全に作る（自分のラボ用）
+python3 - &lt;&lt;'PY'
+from urllib.parse import urlencode
+print('http://127.0.0.1:8767/lab/xss/vuln?' + urlencode({'name':'&lt;b&gt;CTF&lt;/b&gt;'}))
+PY
+</code></pre>
+<p>生レスポンスが無くてもDOMに出る場合は、ブラウザのSourcesで <code>location.search</code> / <code>location.hash</code> / <code>URLSearchParams</code> / <code>innerHTML</code> / <code>insertAdjacentHTML</code> / <code>document.write</code> / <code>eval</code> 等の参照を検討する。<strong>見つけただけでは危険かどうかは決まらない</strong>。</p>
+<h2>7. CSPと実行に関する誤解</h2>
+<ul>
+<li><code>&lt;script&gt;</code>が生HTMLにあっても、CSPやパーサー挙動によって実行されないことがある。</li>
+<li><code>innerHTML</code>に入れた <code>&lt;script&gt;</code> は、多くのブラウザでそのまま実行されない。<strong>だからinnerHTMLが安全という意味ではない</strong>。他のHTML構文が影響し得る。</li>
+<li>HTTPレスポンスヘッダーの<code>Content-Security-Policy</code>は重要だが、<strong>CSPは出力エンコードの代替ではない</strong>。</li>
+<li><code>HttpOnly</code> CookieはJSから直接読めないが、XSSによる画面改変やアカウント操作すべてを防ぐわけではない。</li>
+</ul>
+<h2>8. CTF判断マトリクス</h2>
+<table>
+<thead>
+<tr>
+  <th>現象</th>
+  <th>次に何を見る？</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>&lt;b&gt;</code>が文字として見える</td>
+  <td>レスポンスで <code>&amp;lt;</code> 化されているか</td>
+</tr>
+<tr>
+  <td><code>&lt;b&gt;</code>が太字になる</td>
+  <td>HTML注入だがJS実行をまだ証明していない</td>
+</tr>
+<tr>
+  <td>生HTMLにないがDOMにある</td>
+  <td>URL→JavaScript→DOMの追跡</td>
+</tr>
+<tr>
+  <td>開き直すと残る</td>
+  <td>Storedかブラウザ保存かを区別</td>
+</tr>
+<tr>
+  <td>3番目のpが変わらない</td>
+  <td>実行タイミング・要素の個数・セレクタ</td>
+</tr>
+<tr>
+  <td>XSS証拠はあるのにalertなし</td>
+  <td>CSP・JSエラー・非実行文脈など</td>
+</tr>
+<tr>
+  <td>クリックしたときだけ挙動</td>
+  <td>イベントハンドラ/ユーザー操作が必要な文脈</td>
+</tr>
+</tbody>
+</table>
+<h2>9. 根本対策</h2>
+<ul>
+<li>HTMLテキスト：サーバー出力時の適切なHTMLエンコード。</li>
+<li>DOM：<code>textContent</code>、<code>createTextNode</code>、<code>setAttribute</code>の正しい使い方。安易な<code>innerHTML</code>は禁止。</li>
+<li>URL：リンク先の許可されたスキーム・ホスト等をチェック。</li>
+<li>リッチテキスト：信頼できるHTMLサニタイザ（例：DOMPurify）を使用。</li>
+<li>CSP・Trusted Types・Cookie属性・権限制御を多層防御として導入。</li>
+</ul>
+<h2>一次資料</h2>
+<ul>
+<li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html">OWASP XSS Prevention</a></li>
+<li><a href="https://cheatsheetseries.owasp.org/cheatsheets/DOM_based_XSS_Prevention_Cheat_Sheet.html">OWASP DOM-based XSS Prevention</a></li>
+<li><a href="https://portswigger.net/web-security/cross-site-scripting/contexts">PortSwigger XSS contexts</a></li>
+<li><a href="https://developer.mozilla.org/en-US/docs/Web/API/Element/innerHTML">MDN innerHTML</a></li>
+</ul>
+</article><p class="footer"><a href="README.html">教材README</a> · <a href="SOURCES.html">根拠資料</a> · <a href="CTF_MANUAL_QUICKREF.html">コマンド早見表</a></p></main></div></body></html>

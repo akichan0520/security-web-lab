@@ -1,0 +1,137 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>23｜CTF高難度対応・判断木 | Web Security Lab</title><link rel="stylesheet" href="assets/style.css"></head><body><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">◈ Web Security Lab</a><p class="tag">CTF / THEORY / DEFENSE</p><div class="menulist"><a class="menu" href="index.html">⌂ 学習メニュー</a><a class="menu" href="README.html">📚 全体README</a><a class="menu" href="00-http-trust-boundaries.html">00｜HTTPと「データが命令になる」境界</a>
+<a class="menu" href="01-sqli-ctf-field-manual.html">SQLインジェクション：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="01-sqli.html">01｜SQL Injection（SQLi）— 理論、観測、原因、対策</a>
+<a class="menu" href="02-burp-sqlmap.html">02｜Burp Suite → SQLmap — HTTPの再現と診断</a>
+<a class="menu" href="03-mysql-files-os.html">03｜MySQLとファイルシステム・OSシェルの権限境界</a>
+<a class="menu" href="04-xss.html">04｜XSS：反射型・蓄積型・DOM-basedを「入力→HTTP応答→JS」で理解</a>
+<a class="menu" href="05-php-pdo.html">05｜PHP PDO — `prepare()` + `:name1` がなぜSQLiを防ぐのか</a>
+<a class="menu" href="06-command-injection.html">06｜OS Command Injection — DNS照会を例に</a>
+<a class="menu" href="07-php2shell-2026.html">07｜PHP2Shell（2026年10月公開）とDBの関係</a>
+<a class="menu" href="08-ctf-method.html">08｜CTF調査の方法論と「高難度CTF」</a>
+<a class="menu" href="09-error-troubleshooting.html">09｜エラー・表示の読み方 — 一覧</a>
+<a class="menu" href="10-attack-chain-defense.html">10｜攻撃連鎖と多層防御</a>
+<a class="menu" href="11-code-review.html">11｜PHP Webアプリのコードレビュー演習 — 発見→原因→修正</a>
+<a class="menu" href="12-case-study.html">12｜匿名化CTFケーススタディ — 調査結果と不確実性</a>
+<a class="menu" href="13-xss-ctf-field-manual.html">XSS：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="14-os-command-ctf-field-manual.html">OSコマンドインジェクション：調査・原因・安全実装</a>
+<a class="menu" href="15-auth-access-csrf-file.html">認証・認可・CSRF・ファイルアップロード：CTF調査メモ</a>
+<a class="menu" href="16-logging-incident-response.html">CTFから実務へ：ログ・検知・インシデント対応</a>
+<a class="menu" href="17-ctf-scenarios-and-answers.html">CTF問題集：答え合わせと学習目的</a><a class="menu" href="18-http-manual-curl.html">18｜HTTPをコマンドで読む・再現する</a><a class="menu" href="19-os-command-manual.html">19｜OSコマンド注入・シェル文法</a><a class="menu" href="20-xss-manual-contexts.html">20｜XSSの文脈別・DOM手動検証</a><a class="menu" href="21-dirb-manual-discovery.html">21｜DIRB系の手動パス探索</a><a class="menu" href="22-burp-without-burp.html">22｜Burpの通信解析をコマンドで再現</a><a class="menu" href="23-ctf-tactics-decision-trees.html">23｜CTF高難度対応・判断木</a><a class="menu" href="24-other-web-ctf-reasoning.html">24｜認証・認可・アップロード等</a><a class="menu" href="25-manual-drills.html">25｜手動CTF問題集・解説付き</a><a class="menu" href="CTF_MANUAL_QUICKREF.html">★ 手動コマンド早見表</a></div></aside><main class="main"><p class="topnav"><a href="index.html">← 学習メニューへ戻る</a></p><article class="article"><h1>23｜CTF高難度対応：推論・時間配分・エラー診断の判断木</h1>
+<blockquote>
+<p>「上位に必ず入れる」万能構文は存在しない。再現性のある観測、仮説の優先順位、時間管理、見落とし防止が強みになる。</p>
+</blockquote>
+<h2>1. 競技開始直後の10分：盤面を作る</h2>
+<pre><code class="language-text">0-2分   主催者の許可範囲／ルール／スコア／対象URLを確認
+2-4分   HTTP基準 GET /, 存在するpath, 存在しないpath
+4-6分   ページのフォーム、リンク、JS、Cookie、認証状態を記録
+6-8分   パラメータ単位で入力を変え、観測差をノートに残す
+8-10分  SQLi/XSS/OSコマンド/認可/パス探索などの仮説を順位付け
+</code></pre>
+<p>テクニックを10個同時に試しても「なぜできたか」が分からなくなる。まず攻撃面を整理する。</p>
+<h2>2. 現象別の判断木</h2>
+<pre><code class="language-text">HTTP 405 → Methodとpathを最初に確認 → ブラウザの本来の通信は?
+HTTP 500 → 入力のバリデーション? SQL例外? テンプレート例外? バックエンドログ?
+HTTP 200 → 画面と生本文が一致する? JS描画か?
+真/偽で差 → 本文差? 件数差? 時間差? SQLエラーとの区別?
+入力反射 → HTML本文? 属性? JS? URL? DOM sink?
+パス403 → 本当にそのルートのアクセス制御? 一律403?
+OSシェル No output → stdout/stderr/終了コード/実行コンテキストを区別
+</code></pre>
+<h2>3. 実験ノートは「仮説→反証」を書く</h2>
+<table>
+<thead>
+<tr>
+  <th>項目</th>
+  <th>例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>仮説</td>
+  <td><code>name</code>がSQL文字列リテラルへ連結される</td>
+</tr>
+<tr>
+  <td>対照</td>
+  <td>正常名・絶対にない名・異常引用符</td>
+</tr>
+<tr>
+  <td>期待</td>
+  <td>引用符で処理が変わる、SQL例外と不一致の応答は別</td>
+</tr>
+<tr>
+  <td>観測</td>
+  <td>500と0件が異なる</td>
+</tr>
+<tr>
+  <td>結論</td>
+  <td>SQL入力処理に問題の疑い。実害は未確定</td>
+</tr>
+<tr>
+  <td>反証</td>
+  <td>パラメータ化へ変更すると再現しなくなるか</td>
+</tr>
+</tbody>
+</table>
+<h2>4. 競技中の時間配分（例）</h2>
+<table>
+<thead>
+<tr>
+  <th>割合</th>
+  <th>注力すること</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>20%</td>
+  <td>盤面と入力箇所の把握</td>
+</tr>
+<tr>
+  <td>40%</td>
+  <td>上位仮説の手動実験と再現</td>
+</tr>
+<tr>
+  <td>20%</td>
+  <td>回答条件とログ・ファイルの整理</td>
+</tr>
+<tr>
+  <td>20%</td>
+  <td>未解決問題を再検討し、単純な見落としを解消</td>
+</tr>
+</tbody>
+</table>
+<p>難しさだけで高得点とは限らない。<strong>確実に解ける問題</strong>と<strong>理解に時間がかかる問題</strong>を分ける。多数のパラメータにペイロードを乱射するより、<strong>反射文脈と処理系を同定してから最小手数で試す</strong>。</p>
+<h2>5. 12の典型的な勘違い</h2>
+<ol>
+<li>200なら目的のページがある → soft404がある。</li>
+<li>403ならファイルが存在する → 一律403の可能性。</li>
+<li>500ならSQLiがある → 多様な例外。</li>
+<li><code>OR 1=2</code>は必ず偽 → 元の条件が真なら真になり得る。</li>
+<li><code>:name1</code>はPHP変数 → 名前付きプレースホルダー。</li>
+<li><code>prepare()</code>の文字列に外部入力を連結しても安全 → 連結箇所は未保護。</li>
+<li><code>&lt;b&gt;</code>が太字ならXSS成立 → HTMLインジェクションの証拠に留まる。</li>
+<li><code>innerHTML</code>の<code>&lt;script&gt;</code>は必ず実行 → DOM挿入時は一般にそうならない。</li>
+<li>JSから3番目の<code>p</code>は <code>[3]</code> → <code>[2]</code>。</li>
+<li><code>secure_file_priv=''</code>なら任意ファイルが読める → FILE権限・OS権限・存在確認が必要。</li>
+<li><code>os-shell&gt;</code>に入ったらSSHと同じ → SQLmapの中継方式・出力回収の制約。</li>
+<li><code>find /</code>に結果なしならファイル不存在 → 権限・異なる名前空間・エラー隠蔽。</li>
+</ol>
+<h2>6. 評価基準：正答より「再現できる理解」</h2>
+<p>CTFの記録には <strong>(a)入力位置、(b)元の処理、(c)HTTPの変化、(d)原因の文法、(e)必要な権限、(f)根本対策、(g)修正後の再検証</strong> の7点を残す。仲間に数分で引き継げる記録は強い。</p>
+<h2>7. ラボ演習の進捗表</h2>
+<ul>
+<li>[ ] A: GET/POSTの違いをcurlだけで説明できる</li>
+<li>[ ] B: SQL真/偽ペアを再現して偽陽性を排除できる</li>
+<li>[ ] C: XSSのHTML本文と属性値の違いを説明できる</li>
+<li>[ ] D: DOMの3番目のp要素をJSから変更できる</li>
+<li>[ ] E: <code>exec()</code>と<code>dns_get_record()</code>の権限境界を説明できる</li>
+<li>[ ] F: 「ファイルを発見」「読める」「実行できる」を区別できる</li>
+<li>[ ] G: DIRB系の小規模パス探索をcurlで再現できる</li>
+<li>[ ] H: 総括でSQLi/XSS/OSコマンドの各修正点を説明できる</li>
+</ul>
+<h2>一次資料</h2>
+<ul>
+<li><a href="https://wstg.owasp.org/">OWASP WSTG</a></li>
+<li><a href="https://portswigger.net/web-security">PortSwigger Web Security Academy</a></li>
+<li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Injection_Prevention_Cheat_Sheet.html">OWASP Injection Prevention</a></li>
+</ul>
+</article><p class="footer"><a href="README.html">教材README</a> · <a href="SOURCES.html">根拠資料</a> · <a href="CTF_MANUAL_QUICKREF.html">コマンド早見表</a></p></main></div></body></html>

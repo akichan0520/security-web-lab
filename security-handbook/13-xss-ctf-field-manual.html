@@ -1,0 +1,121 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="description" content="CTFで学ぶSQLインジェクション、XSS、Burp Suite、PHP、MySQLの実践教材"><link rel="stylesheet" href="assets/style.css"><title>XSS：CTF実戦フィールドマニュアル | Web Security Lab</title></head><body><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">◈ Web Security Lab</a><p class="tag">CTF / THEORY / DEFENSE</p><div class="menulist"><a class="menu" href="index.html">⌂ 学習メニュー</a><a class="menu" href="README.html">📚 全体README</a><a class="menu" href="00-http-trust-boundaries.html">00｜HTTPと「データが命令になる」境界</a>
+<a class="menu" href="01-sqli-ctf-field-manual.html">SQLインジェクション：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="01-sqli.html">01｜SQL Injection（SQLi）— 理論、観測、原因、対策</a>
+<a class="menu" href="02-burp-sqlmap.html">02｜Burp Suite → SQLmap — HTTPの再現と診断</a>
+<a class="menu" href="03-mysql-files-os.html">03｜MySQLとファイルシステム・OSシェルの権限境界</a>
+<a class="menu" href="04-xss.html">04｜XSS：反射型・蓄積型・DOM-basedを「入力→HTTP応答→JS」で理解</a>
+<a class="menu" href="05-php-pdo.html">05｜PHP PDO — `prepare()` + `:name1` がなぜSQLiを防ぐのか</a>
+<a class="menu" href="06-command-injection.html">06｜OS Command Injection — DNS照会を例に</a>
+<a class="menu" href="07-php2shell-2026.html">07｜PHP2Shell（2026年10月公開）とDBの関係</a>
+<a class="menu" href="08-ctf-method.html">08｜CTF調査の方法論と「高難度CTF」</a>
+<a class="menu" href="09-error-troubleshooting.html">09｜エラー・表示の読み方 — 一覧</a>
+<a class="menu" href="10-attack-chain-defense.html">10｜攻撃連鎖と多層防御</a>
+<a class="menu" href="11-code-review.html">11｜PHP Webアプリのコードレビュー演習 — 発見→原因→修正</a>
+<a class="menu" href="12-case-study.html">12｜匿名化CTFケーススタディ — 調査結果と不確実性</a>
+<a class="menu" href="13-xss-ctf-field-manual.html">XSS：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="14-os-command-ctf-field-manual.html">OSコマンドインジェクション：調査・原因・安全実装</a>
+<a class="menu" href="15-auth-access-csrf-file.html">認証・認可・CSRF・ファイルアップロード：CTF調査メモ</a>
+<a class="menu" href="16-logging-incident-response.html">CTFから実務へ：ログ・検知・インシデント対応</a>
+<a class="menu" href="17-ctf-scenarios-and-answers.html">CTF問題集：答え合わせと学習目的</a><a class="menu" href="18-http-manual-curl.html">18｜HTTPをコマンドで読む・再現する</a><a class="menu" href="19-os-command-manual.html">19｜OSコマンド注入・シェル文法</a><a class="menu" href="20-xss-manual-contexts.html">20｜XSSの文脈別・DOM手動検証</a><a class="menu" href="21-dirb-manual-discovery.html">21｜DIRB系の手動パス探索</a><a class="menu" href="22-burp-without-burp.html">22｜Burpの通信解析をコマンドで再現</a><a class="menu" href="23-ctf-tactics-decision-trees.html">23｜CTF高難度対応・判断木</a><a class="menu" href="24-other-web-ctf-reasoning.html">24｜認証・認可・アップロード等</a><a class="menu" href="25-manual-drills.html">25｜手動CTF問題集・解説付き</a><a class="menu" href="CTF_MANUAL_QUICKREF.html">★ 手動コマンド早見表</a></div></aside><main class="main"><p class="topnav"><a href="index.html">← 学習メニューへ戻る</a></p><article class="article"><h1>XSS：CTF実戦フィールドマニュアル</h1>
+<h2>最短判別</h2>
+<table>
+<thead>
+<tr>
+  <th>観測</th>
+  <th>疑う問題</th>
+  <th>次の確認</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>URLの値がHTTP Responseに混入</td>
+  <td>反射型XSSの入口</td>
+  <td>HTML本文・属性・JS文字列のどこか</td>
+</tr>
+<tr>
+  <td>投稿が保存・再表示</td>
+  <td>蓄積型XSSの入口</td>
+  <td>別セッション・再読み込み</td>
+</tr>
+<tr>
+  <td>Responseに値はないのにDOMに反映</td>
+  <td>DOM-based XSS</td>
+  <td><code>location.search</code>/<code>hash</code>→sinkの流れ</td>
+</tr>
+</tbody>
+</table>
+<p>反射、蓄積、DOMは直交する観点を含む。必ず「<strong>どこがデータ源（source）で、どこが危険な出力先（sink）か</strong>」を示す。</p>
+<h2>入力→HTTP→レスポンス→DOMの4点観測</h2>
+<ol>
+<li>入力欄に <code>CTF_MARKER_123</code> を入れる。</li>
+<li>Burp/Networkで <strong>HTTPリクエストの送信先・パラメータ</strong> を確認。</li>
+<li>ResponseのHTML/JSON内でマーカーが存在するか確認。</li>
+<li>ElementsのDOMに反映された場所と、Response元のHTMLを比較する。</li>
+</ol>
+<p>Response内にない場合、DOM操作でURLやStorageの値を取り出している可能性もある。単に<code>?q=...</code>をURLに付けるだけでは実行されない。</p>
+<h2>反射位置ごとの防御を理解する</h2>
+<table>
+<thead>
+<tr>
+  <th>出力文脈</th>
+  <th>危険の原因</th>
+  <th>防御の第一候補</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>HTML本文</td>
+  <td>HTMLとして解釈</td>
+  <td>HTMLエスケープ</td>
+</tr>
+<tr>
+  <td>HTML属性</td>
+  <td>引用符境界やイベント属性</td>
+  <td>属性としてのエスケープ + 属性名固定</td>
+</tr>
+<tr>
+  <td>JavaScript文字列</td>
+  <td>JSソースへ直埋め</td>
+  <td>JSON安全シリアライズ・JSへの直埋め回避</td>
+</tr>
+<tr>
+  <td>URL (<code>href</code>)</td>
+  <td>危険なURLスキーム</td>
+  <td>許可スキーム・URL検証</td>
+</tr>
+<tr>
+  <td>DOM (<code>innerHTML</code>)</td>
+  <td>HTMLとして再解析</td>
+  <td><code>textContent</code> / <code>createTextNode</code></td>
+</tr>
+</tbody>
+</table>
+<h3>3番目の <code>&lt;p&gt;</code> を書き換えるJavaScript（自分のブラウザでの学習）</h3>
+<pre><code class="language-javascript">const p = document.querySelectorAll('p')[2];
+if (p) p.textContent = 'CTF成功';
+</code></pre>
+<p>IDがある場合は <code>document.getElementById('target')</code>。<code>querySelectorAll('p')[2]</code> は <strong>0始まり</strong>なので3番目の要素を指す。DOMへの変更は「ページのソースを表示」の元HTMLとは異なる。</p>
+<p>URL全文がCTFのフラグになる場合は、URL中の値がサーバーのHTMLへ反射されるか、ページJSが値を危険なsinkへ渡しているかを <strong>実際のコードか通信</strong> で確かめる。適当な<code>?name=</code>は根拠にならない。</p>
+<h2>安全実装</h2>
+<p>PHPのHTML本文：</p>
+<pre><code class="language-php">echo '&lt;p&gt;' . htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '&lt;/p&gt;';
+</code></pre>
+<p>JavaScriptで文字列を表示：</p>
+<pre><code class="language-javascript">document.getElementById('target').textContent = userInput;
+</code></pre>
+<p>蓄積型XSSでは、PDOで安全にINSERTしても表示時に <code>innerHTML</code> などを使えばXSSが残り得る。<strong>DBへの保存安全性とブラウザへの出力安全性は別</strong>。</p>
+<h2>エラー/観測の読み方</h2>
+<ul>
+<li>太字タグが有効になっただけでは <strong>JS実行の証明ではない</strong>。</li>
+<li>CSPでスクリプトが禁止されたなら、ConsoleのCSPエラーとヘッダーを確認。</li>
+<li><code>innerHTML</code> に <code>&lt;script&gt;</code> 文字列を代入しても、ブラウザはそのscript要素を必ずしも実行しない。DOMイベント等の評価と分ける。</li>
+<li>HTTPで反射されていても、HTMLエスケープされていれば文字として扱われる。</li>
+<li><code>HttpOnly</code> cookieはJSから直接読み取れないが、XSSの全影響を無効化するものではない。</li>
+</ul>
+<h2>根拠</h2>
+<ul>
+<li><a href="https://portswigger.net/web-security/cross-site-scripting">PortSwigger XSS</a></li>
+<li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html">OWASP XSS Prevention</a></li>
+<li><a href="https://cheatsheetseries.owasp.org/cheatsheets/DOM_based_XSS_Prevention_Cheat_Sheet.html">OWASP DOM XSS Prevention</a></li>
+</ul>
+</article><p class="footer">2026-10-24 / 教育・許可された検証専用。実データは公開しない。</p></main></div></body></html>

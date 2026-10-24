@@ -1,0 +1,57 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>24｜認証・認可・アップロード等 | Web Security Lab</title><link rel="stylesheet" href="assets/style.css"></head><body><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">◈ Web Security Lab</a><p class="tag">CTF / THEORY / DEFENSE</p><div class="menulist"><a class="menu" href="index.html">⌂ 学習メニュー</a><a class="menu" href="README.html">📚 全体README</a><a class="menu" href="00-http-trust-boundaries.html">00｜HTTPと「データが命令になる」境界</a>
+<a class="menu" href="01-sqli-ctf-field-manual.html">SQLインジェクション：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="01-sqli.html">01｜SQL Injection（SQLi）— 理論、観測、原因、対策</a>
+<a class="menu" href="02-burp-sqlmap.html">02｜Burp Suite → SQLmap — HTTPの再現と診断</a>
+<a class="menu" href="03-mysql-files-os.html">03｜MySQLとファイルシステム・OSシェルの権限境界</a>
+<a class="menu" href="04-xss.html">04｜XSS：反射型・蓄積型・DOM-basedを「入力→HTTP応答→JS」で理解</a>
+<a class="menu" href="05-php-pdo.html">05｜PHP PDO — `prepare()` + `:name1` がなぜSQLiを防ぐのか</a>
+<a class="menu" href="06-command-injection.html">06｜OS Command Injection — DNS照会を例に</a>
+<a class="menu" href="07-php2shell-2026.html">07｜PHP2Shell（2026年10月公開）とDBの関係</a>
+<a class="menu" href="08-ctf-method.html">08｜CTF調査の方法論と「高難度CTF」</a>
+<a class="menu" href="09-error-troubleshooting.html">09｜エラー・表示の読み方 — 一覧</a>
+<a class="menu" href="10-attack-chain-defense.html">10｜攻撃連鎖と多層防御</a>
+<a class="menu" href="11-code-review.html">11｜PHP Webアプリのコードレビュー演習 — 発見→原因→修正</a>
+<a class="menu" href="12-case-study.html">12｜匿名化CTFケーススタディ — 調査結果と不確実性</a>
+<a class="menu" href="13-xss-ctf-field-manual.html">XSS：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="14-os-command-ctf-field-manual.html">OSコマンドインジェクション：調査・原因・安全実装</a>
+<a class="menu" href="15-auth-access-csrf-file.html">認証・認可・CSRF・ファイルアップロード：CTF調査メモ</a>
+<a class="menu" href="16-logging-incident-response.html">CTFから実務へ：ログ・検知・インシデント対応</a>
+<a class="menu" href="17-ctf-scenarios-and-answers.html">CTF問題集：答え合わせと学習目的</a><a class="menu" href="18-http-manual-curl.html">18｜HTTPをコマンドで読む・再現する</a><a class="menu" href="19-os-command-manual.html">19｜OSコマンド注入・シェル文法</a><a class="menu" href="20-xss-manual-contexts.html">20｜XSSの文脈別・DOM手動検証</a><a class="menu" href="21-dirb-manual-discovery.html">21｜DIRB系の手動パス探索</a><a class="menu" href="22-burp-without-burp.html">22｜Burpの通信解析をコマンドで再現</a><a class="menu" href="23-ctf-tactics-decision-trees.html">23｜CTF高難度対応・判断木</a><a class="menu" href="24-other-web-ctf-reasoning.html">24｜認証・認可・アップロード等</a><a class="menu" href="25-manual-drills.html">25｜手動CTF問題集・解説付き</a><a class="menu" href="CTF_MANUAL_QUICKREF.html">★ 手動コマンド早見表</a></div></aside><main class="main"><p class="topnav"><a href="index.html">← 学習メニューへ戻る</a></p><article class="article"><h1>24｜その他のWeb CTFで理論的に判断するための要点</h1>
+<h2>1. 認証(authentication) と認可(authorization) の違い</h2>
+<ul>
+<li>認証：誰かを確かめる。セッションCookieなど。</li>
+<li>認可：その利用者がその<strong>対象オブジェクト</strong>へアクセスしてよいか確かめる。</li>
+<li>SQLが完全にパラメータ化されても、認可漏れ（IDOR/BOLA）で他人のオブジェクトを表示できることがある。</li>
+</ul>
+<pre><code class="language-python"># 認可の設計例。ログインユーザーIDはサーバーのセッションから取得。
+# この条件を含めなければ、IDだけを変えることで他人の注文を参照できる恐れ。
+cur.execute('SELECT * FROM orders WHERE id=? AND owner_id=?',
+            (requested_order_id, authenticated_user_id))
+</code></pre>
+<h2>2. CSRF：ブラウザが認証情報を自動送信することと操作の意図は別</h2>
+<p>CSRFでは、ブラウザのCookieが自動送信され得ることと、その操作を本人が意図したかを区別。状態変更にはCSRFトークン、SameSite Cookie、Origin/Refererの追加検証など多層防御。<strong>XSSがあるとCSRFの前提が崩れる場合もある</strong>。</p>
+<h2>3. File Upload：拡張子だけでは安全ではない</h2>
+<p>アップロードされたファイルは、拡張子、MIME、マジックバイト、保存先、Webサーバーによる実行可否が別々。公開ディレクトリへ置かない、ランダム名、権限最小化、サイズ制限、必要なら画像等をデコード・再生成する設計を検討する。単に<code>file.php</code>を禁止するだけでは防御が完成しない。</p>
+<h2>4. パストラバーサル：WebルートとOSパスは違う</h2>
+<p>アプリがユーザーのファイル名をOSパスと連結する場合、ディレクトリの境界を越える設計になり得る。防御は親ディレクトリの固定、正規化後の許可ディレクトリ内チェック、最小権限で行う。<code>../</code>という文字列だけを拒否する実装に頼らない。</p>
+<h2>5. SSRF：リクエスト送信先の制御</h2>
+<p>サーバーがユーザー指定URLにアクセスする機能は、内部IPや管理用サービスへの接続、DNSの結果変化などへの対策が必要。<strong>URL文字列が正常でも安全な接続先とは限らない</strong>。許可スキーム・ホスト・解決後IP、リダイレクト先を確認し、ネットワークで制限する。</p>
+<h2>6. JWT・Cookie・セッション</h2>
+<p>JWTをデコードできることと、署名を検証できることは別。セッション管理ではCookieの<code>Secure</code>・<code>HttpOnly</code>・<code>SameSite</code>、再認証、期限、権限更新時の反映を考える。<code>HttpOnly</code>はXSSでのCookie直接読取りを制限するが、XSS全体の防御ではない。</p>
+<h2>7. 調査する時のフレームワーク</h2>
+<pre><code class="language-text">A. 入力/変更できるものは何か（値・URL・メソッド・Cookie）
+B. 保存先や実行場所はどこか（DB・FS・OS・ブラウザ）
+C. どの文法で解釈されるか（SQL / Shell / HTML / JS）
+D. 認証と認可がどこで検査されるか
+E. 観測可能な結果は何か（応答・時間・状態）
+F. 根本原因と修正確認を一文で説明できるか
+</code></pre>
+<h2>一次資料</h2>
+<ul>
+<li><a href="https://wstg.owasp.org/">OWASP WSTG</a></li>
+<li><a href="https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html">OWASP File Upload</a></li>
+<li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html">OWASP SSRF</a></li>
+<li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Insecure_Direct_Object_Reference_Prevention_Cheat_Sheet.html">OWASP IDOR</a></li>
+<li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html">OWASP CSRF</a></li>
+</ul>
+</article><p class="footer"><a href="README.html">教材README</a> · <a href="SOURCES.html">根拠資料</a> · <a href="CTF_MANUAL_QUICKREF.html">コマンド早見表</a></p></main></div></body></html>

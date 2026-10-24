@@ -1,0 +1,85 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="description" content="CTFで学ぶSQLインジェクション、XSS、Burp Suite、PHP、MySQLの実践教材"><link rel="stylesheet" href="assets/style.css"><title>03｜MySQLとファイルシステム・OSシェルの権限境界 | Web Security Lab</title></head><body><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">◈ Web Security Lab</a><p class="tag">CTF / THEORY / DEFENSE</p><div class="menulist"><a class="menu" href="index.html">⌂ 学習メニュー</a><a class="menu" href="README.html">📚 全体README</a><a class="menu" href="00-http-trust-boundaries.html">00｜HTTPと「データが命令になる」境界</a>
+<a class="menu" href="01-sqli-ctf-field-manual.html">SQLインジェクション：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="01-sqli.html">01｜SQL Injection（SQLi）— 理論、観測、原因、対策</a>
+<a class="menu" href="02-burp-sqlmap.html">02｜Burp Suite → SQLmap — HTTPの再現と診断</a>
+<a class="menu" href="03-mysql-files-os.html">03｜MySQLとファイルシステム・OSシェルの権限境界</a>
+<a class="menu" href="04-xss.html">04｜XSS：反射型・蓄積型・DOM-basedを「入力→HTTP応答→JS」で理解</a>
+<a class="menu" href="05-php-pdo.html">05｜PHP PDO — `prepare()` + `:name1` がなぜSQLiを防ぐのか</a>
+<a class="menu" href="06-command-injection.html">06｜OS Command Injection — DNS照会を例に</a>
+<a class="menu" href="07-php2shell-2026.html">07｜PHP2Shell（2026年10月公開）とDBの関係</a>
+<a class="menu" href="08-ctf-method.html">08｜CTF調査の方法論と「高難度CTF」</a>
+<a class="menu" href="09-error-troubleshooting.html">09｜エラー・表示の読み方 — 一覧</a>
+<a class="menu" href="10-attack-chain-defense.html">10｜攻撃連鎖と多層防御</a>
+<a class="menu" href="11-code-review.html">11｜PHP Webアプリのコードレビュー演習 — 発見→原因→修正</a>
+<a class="menu" href="12-case-study.html">12｜匿名化CTFケーススタディ — 調査結果と不確実性</a>
+<a class="menu" href="13-xss-ctf-field-manual.html">XSS：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="14-os-command-ctf-field-manual.html">OSコマンドインジェクション：調査・原因・安全実装</a>
+<a class="menu" href="15-auth-access-csrf-file.html">認証・認可・CSRF・ファイルアップロード：CTF調査メモ</a>
+<a class="menu" href="16-logging-incident-response.html">CTFから実務へ：ログ・検知・インシデント対応</a>
+<a class="menu" href="17-ctf-scenarios-and-answers.html">CTF問題集：答え合わせと学習目的</a><a class="menu" href="18-http-manual-curl.html">18｜HTTPをコマンドで読む・再現する</a><a class="menu" href="19-os-command-manual.html">19｜OSコマンド注入・シェル文法</a><a class="menu" href="20-xss-manual-contexts.html">20｜XSSの文脈別・DOM手動検証</a><a class="menu" href="21-dirb-manual-discovery.html">21｜DIRB系の手動パス探索</a><a class="menu" href="22-burp-without-burp.html">22｜Burpの通信解析をコマンドで再現</a><a class="menu" href="23-ctf-tactics-decision-trees.html">23｜CTF高難度対応・判断木</a><a class="menu" href="24-other-web-ctf-reasoning.html">24｜認証・認可・アップロード等</a><a class="menu" href="25-manual-drills.html">25｜手動CTF問題集・解説付き</a><a class="menu" href="CTF_MANUAL_QUICKREF.html">★ 手動コマンド早見表</a></div></aside><main class="main"><p class="topnav"><a href="index.html">← 学習メニューへ戻る</a></p><article class="article"><h1>03｜MySQLとファイルシステム・OSシェルの権限境界</h1>
+<h2>SQLiが成立してもファイルは無条件には読めない</h2>
+<pre><code>Web入力 → SQLi → DBアカウントの権限
+                        ├ SELECT（DBの行）
+                        └ ファイル操作：FILE権限 + DB設定 + OS権限
+                                            └ DBサーバーのFS
+                          OS操作はさらに別の前提と実行経路が必要
+</code></pre>
+<p>DBサーバーとWebサーバーが別ホスト/コンテナなら、ファイルシステムも異なる場合がある。MySQLの<code>@@datadir</code>が<code>/var/lib/mysql/</code>でもWeb公開領域の場所は分からない。</p>
+<h2><code>secure_file_priv</code> の解釈</h2>
+<table>
+<thead>
+<tr>
+  <th>値</th>
+  <th>ファイル入出力機能への意味</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>特定のディレクトリ</td>
+  <td>該当ディレクトリに制限</td>
+</tr>
+<tr>
+  <td>空文字列 <code>''</code></td>
+  <td>この設定によるディレクトリ制限なし（安全ではない）</td>
+</tr>
+<tr>
+  <td><code>NULL</code></td>
+  <td><code>LOAD_FILE</code> / <code>SELECT INTO OUTFILE</code> など該当機能を無効化</td>
+</tr>
+</tbody>
+</table>
+<p>値が「空欄」に見えるだけではNULLと空文字列を区別できない。DBの<code>FILE</code>権限、OS権限、ファイル既存状態、サービス配置などは独立して判断する。</p>
+<pre><code class="language-sql">-- 自分で管理するMySQLの設定調査例
+SHOW VARIABLES LIKE 'secure_file_priv';
+SHOW VARIABLES LIKE 'datadir';
+</code></pre>
+<ul>
+<li><code>SELECT ... INTO OUTFILE</code>：MySQLサーバーのファイルシステムへ結果を出力する機能。既存ファイルの上書きは原則不可。</li>
+<li><code>LOAD_FILE()</code>：MySQLサーバーが読めるファイルを取得し得る関数。パス、権限、サイズ、設定に依存。</li>
+<li><code>sqlmap --file-read</code> / <code>--file-write</code>：サーバー側のファイル操作機能。OSの全文検索ではない。</li>
+<li><code>sqlmap --os-shell</code>：条件次第でOS操作を試す機能。Web stager等の補助ファイルを作成し得るため、明示的に許可された環境でのみ利用。</li>
+</ul>
+<h2><code>find</code>の正しい意味</h2>
+<pre><code class="language-bash"># 自分の環境内の /app 配下を例に、名前でファイル検索
+find /app -type f -name 'sample.csv'
+
+# 大文字・小文字を区別しない
+find /app -type f -iname 'sample.csv'
+
+# 深さ2まで列挙
+find /app -maxdepth 2 -print
+</code></pre>
+<p><code>find /</code> は出力が膨大になることがある。<strong><code>-type f</code>（通常ファイル）と<code>-name</code>（名前一致）は必須ではない</strong>が、出力を絞るため実用的。<code>2&gt;/dev/null</code> は権限エラーを隠してしまうため、調査の初期段階では安易に使わない。</p>
+<p><code>pwd</code>が<code>/app</code>、<code>command -v find</code>が<code>/usr/bin/find</code>、<code>ls</code>が<code>No output</code>であっても、「ファイルがない」とは結論付けられない。コマンドの存在と実行結果の<strong>回収方法</strong>は別問題。</p>
+<h2>PHPファイル実行へ波及するリスク（原理のみ）</h2>
+<p>DBからWeb公開可能な場所へファイルを書き込めて、Webサーバーがその種類をプログラムとして実行する条件が成立すれば、被害が拡大する。SQLi、FILE権限、Web実行権限、Web配置先の共用という<strong>複数条件の連鎖</strong>が必要。任意コマンドを受け取るバックドアやWebシェルはこの教材には含めない。</p>
+<h3>防御</h3>
+<ul>
+<li>DBは必要最小限の権限。一般アプリDBユーザーに不要な<code>FILE</code>権限を付与しない。</li>
+<li>DBプロセスからWeb公開ディレクトリへ書き込めないようにする。</li>
+<li>Webのアップロード領域ではスクリプトを実行しない。</li>
+<li>DBとWebサーバーを権限・通信経路・ファイルシステムで分離する。</li>
+<li>アプリ側のSQLi対策（PDO等）を基本にする。</li>
+</ul>
+<p><strong>根拠</strong>：<a href="https://dev.mysql.com/doc/refman/8.4/en/server-system-variables.html">MySQL <code>secure_file_priv</code></a>、<a href="https://dev.mysql.com/doc/refman/8.4/en/select-into.html">MySQL SELECT INTO</a>、<a href="https://dev.mysql.com/doc/refman/8.4/en/security-against-attack.html">MySQL security guidance</a>、<a href="https://github.com/sqlmapproject/sqlmap/wiki/Usage">sqlmap Usage</a>。</p>
+</article><p class="footer">2026-10-24 / 教育・許可された検証専用。実データは公開しない。</p></main></div></body></html>

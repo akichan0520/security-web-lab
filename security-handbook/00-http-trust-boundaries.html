@@ -1,0 +1,85 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="description" content="CTFで学ぶSQLインジェクション、XSS、Burp Suite、PHP、MySQLの実践教材"><link rel="stylesheet" href="assets/style.css"><title>00｜HTTPと「データが命令になる」境界 | Web Security Lab</title></head><body><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">◈ Web Security Lab</a><p class="tag">CTF / THEORY / DEFENSE</p><div class="menulist"><a class="menu" href="index.html">⌂ 学習メニュー</a><a class="menu" href="README.html">📚 全体README</a><a class="menu" href="00-http-trust-boundaries.html">00｜HTTPと「データが命令になる」境界</a>
+<a class="menu" href="01-sqli-ctf-field-manual.html">SQLインジェクション：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="01-sqli.html">01｜SQL Injection（SQLi）— 理論、観測、原因、対策</a>
+<a class="menu" href="02-burp-sqlmap.html">02｜Burp Suite → SQLmap — HTTPの再現と診断</a>
+<a class="menu" href="03-mysql-files-os.html">03｜MySQLとファイルシステム・OSシェルの権限境界</a>
+<a class="menu" href="04-xss.html">04｜XSS：反射型・蓄積型・DOM-basedを「入力→HTTP応答→JS」で理解</a>
+<a class="menu" href="05-php-pdo.html">05｜PHP PDO — `prepare()` + `:name1` がなぜSQLiを防ぐのか</a>
+<a class="menu" href="06-command-injection.html">06｜OS Command Injection — DNS照会を例に</a>
+<a class="menu" href="07-php2shell-2026.html">07｜PHP2Shell（2026年10月公開）とDBの関係</a>
+<a class="menu" href="08-ctf-method.html">08｜CTF調査の方法論と「高難度CTF」</a>
+<a class="menu" href="09-error-troubleshooting.html">09｜エラー・表示の読み方 — 一覧</a>
+<a class="menu" href="10-attack-chain-defense.html">10｜攻撃連鎖と多層防御</a>
+<a class="menu" href="11-code-review.html">11｜PHP Webアプリのコードレビュー演習 — 発見→原因→修正</a>
+<a class="menu" href="12-case-study.html">12｜匿名化CTFケーススタディ — 調査結果と不確実性</a>
+<a class="menu" href="13-xss-ctf-field-manual.html">XSS：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="14-os-command-ctf-field-manual.html">OSコマンドインジェクション：調査・原因・安全実装</a>
+<a class="menu" href="15-auth-access-csrf-file.html">認証・認可・CSRF・ファイルアップロード：CTF調査メモ</a>
+<a class="menu" href="16-logging-incident-response.html">CTFから実務へ：ログ・検知・インシデント対応</a>
+<a class="menu" href="17-ctf-scenarios-and-answers.html">CTF問題集：答え合わせと学習目的</a><a class="menu" href="18-http-manual-curl.html">18｜HTTPをコマンドで読む・再現する</a><a class="menu" href="19-os-command-manual.html">19｜OSコマンド注入・シェル文法</a><a class="menu" href="20-xss-manual-contexts.html">20｜XSSの文脈別・DOM手動検証</a><a class="menu" href="21-dirb-manual-discovery.html">21｜DIRB系の手動パス探索</a><a class="menu" href="22-burp-without-burp.html">22｜Burpの通信解析をコマンドで再現</a><a class="menu" href="23-ctf-tactics-decision-trees.html">23｜CTF高難度対応・判断木</a><a class="menu" href="24-other-web-ctf-reasoning.html">24｜認証・認可・アップロード等</a><a class="menu" href="25-manual-drills.html">25｜手動CTF問題集・解説付き</a><a class="menu" href="CTF_MANUAL_QUICKREF.html">★ 手動コマンド早見表</a></div></aside><main class="main"><p class="topnav"><a href="index.html">← 学習メニューへ戻る</a></p><article class="article"><h1>00｜HTTPと「データが命令になる」境界</h1>
+<h2>最初に押さえる全体像</h2>
+<pre><code class="language-mermaid">sequenceDiagram
+ participant U as ブラウザ
+ participant W as Webサーバー/アプリ
+ participant D as DB
+ U-&gt;&gt;W: GET /search?name=apple
+ W-&gt;&gt;D: パラメータ化されたSELECT
+ D--&gt;&gt;W: 行データ
+ W--&gt;&gt;U: HTTP 200 + HTML/JSON
+ Note over U: HTMLの解析・DOM生成・JS実行
+</code></pre>
+<ul>
+<li><strong>HTTPリクエスト</strong>：メソッド、パス、クエリ、ヘッダー、Cookie、本文からなる。ブラウザの検索欄はGETとは限らず、POST、Fetch/XHRでも送れる。</li>
+<li><strong>HTTPレスポンス</strong>：ステータス、ヘッダー、HTML/JSONなどの本文。サーバーは通常、クライアントのブラウザ上の「検証」表示を直接書き換えない。</li>
+<li><strong>ブラウザのDOM</strong>：HTMLを解析したあとに作られる要素ツリー。JavaScriptはDOMを変更できるが、それは通常、オリジナルの「ページのソース」を書き換えることではない。</li>
+<li><strong>サーバー側の処理</strong>：PHPはサーバー側、SQLはDB側、<code>exec()</code>を使う場合はサーバーOSのシェル、JavaScriptは通常ブラウザ側で解釈される。</li>
+</ul>
+<h2>インジェクションの統一モデル</h2>
+<pre><code class="language-text">信頼できない入力
+   ↓
+アプリが構文文字列の中へ直接混ぜる
+   ↓
+別の言語/解釈器（SQL・シェル・HTML・JS）が「命令」と認識
+   ↓
+意図しない実行・表示・データ操作
+</code></pre>
+<p><strong>共通の防御</strong>：①命令と値を分離 ②出力先に合わせて符号化 ③入力の用途を制限 ④最小権限 ⑤エラーメッセージを過剰に公開しない。SQLiとXSSでは守る境界と方法が異なる。</p>
+<h2>記録すべき観測情報</h2>
+<table>
+<thead>
+<tr>
+  <th>項目</th>
+  <th>例</th>
+  <th>注意</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>メソッド・パス</td>
+  <td><code>GET /search</code></td>
+  <td>ブラウザNetworkで実測</td>
+</tr>
+<tr>
+  <td>入力パラメータ</td>
+  <td><code>name</code></td>
+  <td><code>-p name</code> のようにキーだけを指定</td>
+</tr>
+<tr>
+  <td>応答コード</td>
+  <td>200/405/500</td>
+  <td>500だけでSQLi成立を断定しない</td>
+</tr>
+<tr>
+  <td>応答差</td>
+  <td>真=複数、偽=検索失敗</td>
+  <td>エラーと0件を区別する</td>
+</tr>
+<tr>
+  <td>実行環境</td>
+  <td>Werkzeug/Python等</td>
+  <td>DBエンジンやPHP動作を即断しない</td>
+</tr>
+</tbody>
+</table>
+<p><strong>根拠</strong>：<a href="https://portswigger.net/burp/documentation/desktop/tools/proxy/http-history">PortSwigger Burp HTTP history</a>、<a href="https://cheatsheetseries.owasp.org/cheatsheets/Injection_Prevention_Cheat_Sheet.html">OWASP Injection Prevention</a>。</p>
+</article><p class="footer">2026-10-24 / 教育・許可された検証専用。実データは公開しない。</p></main></div></body></html>

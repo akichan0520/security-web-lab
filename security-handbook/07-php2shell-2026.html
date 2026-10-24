@@ -1,0 +1,92 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="description" content="CTFで学ぶSQLインジェクション、XSS、Burp Suite、PHP、MySQLの実践教材"><link rel="stylesheet" href="assets/style.css"><title>07｜PHP2Shell（2026年10月公開）とDBの関係 | Web Security Lab</title></head><body><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">◈ Web Security Lab</a><p class="tag">CTF / THEORY / DEFENSE</p><div class="menulist"><a class="menu" href="index.html">⌂ 学習メニュー</a><a class="menu" href="README.html">📚 全体README</a><a class="menu" href="00-http-trust-boundaries.html">00｜HTTPと「データが命令になる」境界</a>
+<a class="menu" href="01-sqli-ctf-field-manual.html">SQLインジェクション：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="01-sqli.html">01｜SQL Injection（SQLi）— 理論、観測、原因、対策</a>
+<a class="menu" href="02-burp-sqlmap.html">02｜Burp Suite → SQLmap — HTTPの再現と診断</a>
+<a class="menu" href="03-mysql-files-os.html">03｜MySQLとファイルシステム・OSシェルの権限境界</a>
+<a class="menu" href="04-xss.html">04｜XSS：反射型・蓄積型・DOM-basedを「入力→HTTP応答→JS」で理解</a>
+<a class="menu" href="05-php-pdo.html">05｜PHP PDO — `prepare()` + `:name1` がなぜSQLiを防ぐのか</a>
+<a class="menu" href="06-command-injection.html">06｜OS Command Injection — DNS照会を例に</a>
+<a class="menu" href="07-php2shell-2026.html">07｜PHP2Shell（2026年10月公開）とDBの関係</a>
+<a class="menu" href="08-ctf-method.html">08｜CTF調査の方法論と「高難度CTF」</a>
+<a class="menu" href="09-error-troubleshooting.html">09｜エラー・表示の読み方 — 一覧</a>
+<a class="menu" href="10-attack-chain-defense.html">10｜攻撃連鎖と多層防御</a>
+<a class="menu" href="11-code-review.html">11｜PHP Webアプリのコードレビュー演習 — 発見→原因→修正</a>
+<a class="menu" href="12-case-study.html">12｜匿名化CTFケーススタディ — 調査結果と不確実性</a>
+<a class="menu" href="13-xss-ctf-field-manual.html">XSS：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="14-os-command-ctf-field-manual.html">OSコマンドインジェクション：調査・原因・安全実装</a>
+<a class="menu" href="15-auth-access-csrf-file.html">認証・認可・CSRF・ファイルアップロード：CTF調査メモ</a>
+<a class="menu" href="16-logging-incident-response.html">CTFから実務へ：ログ・検知・インシデント対応</a>
+<a class="menu" href="17-ctf-scenarios-and-answers.html">CTF問題集：答え合わせと学習目的</a><a class="menu" href="18-http-manual-curl.html">18｜HTTPをコマンドで読む・再現する</a><a class="menu" href="19-os-command-manual.html">19｜OSコマンド注入・シェル文法</a><a class="menu" href="20-xss-manual-contexts.html">20｜XSSの文脈別・DOM手動検証</a><a class="menu" href="21-dirb-manual-discovery.html">21｜DIRB系の手動パス探索</a><a class="menu" href="22-burp-without-burp.html">22｜Burpの通信解析をコマンドで再現</a><a class="menu" href="23-ctf-tactics-decision-trees.html">23｜CTF高難度対応・判断木</a><a class="menu" href="24-other-web-ctf-reasoning.html">24｜認証・認可・アップロード等</a><a class="menu" href="25-manual-drills.html">25｜手動CTF問題集・解説付き</a><a class="menu" href="CTF_MANUAL_QUICKREF.html">★ 手動コマンド早見表</a></div></aside><main class="main"><p class="topnav"><a href="index.html">← 学習メニューへ戻る</a></p><article class="article"><h1>07｜PHP2Shell（2026年10月公開）とDBの関係</h1>
+<p><strong>基準日：2026-10-24</strong>。脆弱性は新しく、利用製品ごとの影響範囲・実環境での成立条件は変わる可能性がある。必ず公式アドバイザリとベンダー情報を追う。</p>
+<h2>何が報告されたか（一次資料確認）</h2>
+<p>PHPプロジェクトは2026-10-21、次の2件を修正するセキュリティリリースを公開した。</p>
+<table>
+<thead>
+<tr>
+  <th>CVE</th>
+  <th>公式説明の要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>CVE-2026-109618</td>
+  <td>OOM（メモリ不足）時の処理に関係するメモリ状態の不備</td>
+</tr>
+<tr>
+  <td>CVE-2026-109619</td>
+  <td>リクエスト間で残存した内部状態に関係する問題</td>
+</tr>
+</tbody>
+</table>
+<p>状況次第で<strong>認証前の遠隔コード実行（RCE）</strong>につながる可能性がある。<strong>これはMySQLのSQLiではなくPHPランタイムの脆弱性</strong>。PDOの<code>prepare()</code>を正しく使っていても、ランタイムの欠陥には直接効果がない。</p>
+<h3>PHP公式の2026-10-21修正版</h3>
+<table>
+<thead>
+<tr>
+  <th>PHP系列</th>
+  <th>少なくともこの修正版へ更新</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>8.5</td>
+  <td>8.5.12</td>
+</tr>
+<tr>
+  <td>8.4</td>
+  <td>8.4.27</td>
+</tr>
+<tr>
+  <td>8.3</td>
+  <td>8.3.36</td>
+</tr>
+<tr>
+  <td>8.2</td>
+  <td>8.2.35（8.2系列は2026-12-31でサポート終了予定）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>注意</strong>：ディストリビューション・商用ベンダーは古いバージョン表記のまま修正パッチをバックポートする場合がある。<code>php -v</code>だけでなくパッケージのセキュリティ告知・SAPIの構成（CLI/Apache/PHP-FPM）も確認する。PHP公式は<strong>完全な緩和策はなく修正版へ更新することが唯一の安全な選択</strong>と案内している。</p>
+<h2>DBへどう波及するか（条件付きシナリオ）</h2>
+<pre><code class="language-mermaid">flowchart TD
+ A[外部HTTPリクエスト] --&gt; B[PHPランタイムの脆弱性]
+ B --&gt;|RCE成立時| C[PHPプロセス権限でコード実行]
+ C --&gt; D{DBへの経路と認証情報が利用可能?}
+ D --&gt;|Yes| E[DBアカウントの権限範囲でアクセス]
+ D --&gt;|No| F[DBへの直接アクセスは制限]
+ E --&gt; G[読取/改変/削除などは権限次第]
+</code></pre>
+<p>RCEが成立しても「必ずDBを自由に操作できる」とは言えない。ネットワーク到達性、秘密情報の保管方法、DBユーザー権限、コンテナ分離などが影響する。</p>
+<h2>防御の優先順位</h2>
+<ol>
+<li><strong>PHPランタイムの修正版を適用</strong>し、アプリ・依存製品の互換テスト。</li>
+<li>CLIとWeb実行系が同じPHPとは限らないため、Apache module・PHP-FPM・コンテナイメージを個別に棚卸し。</li>
+<li>DB接続秘密情報とDB権限を見直し、不要な<code>FILE</code>・管理権限を撤去。</li>
+<li>PHPプロセスとDBの間のネットワークを必要な通信に限定。</li>
+<li>Webアクセスログ、アプリエラー、PHPワーカー異常終了、ファイル書き込みなどを相関分析。</li>
+<li>WAF・リクエスト制限は補助であり、修正版の代替にしない。</li>
+</ol>
+<h2>「見つけたCVE」と「自分のサーバーで悪用可能」は別</h2>
+<p>CVEが該当するかは、バージョンだけでなく、SAPI、製品組み込み形態、構成、到達可能性を合わせて判断する。未検証の製品名・侵害事実を断定しない。</p>
+<p><strong>一次資料</strong>：<a href="https://www.php.net/archive/2026.php#2026-10-21-5">PHP公式 2026アーカイブ</a>、<a href="https://github.com/php/php-src/security/advisories/GHSA-w8hw-w9fx-j79w">PHP GHSA CVE-2026-109618</a>、<a href="https://github.com/php/php-src/security/advisories/GHSA-6wmf-4rv5-p3rp">PHP GHSA CVE-2026-109619</a>、<a href="https://www.ipa.go.jp/security/security-alert/2026/alert20261022.html">IPA 2026-10-22</a>。</p>
+</article><p class="footer">2026-10-24 / 教育・許可された検証専用。実データは公開しない。</p></main></div></body></html>

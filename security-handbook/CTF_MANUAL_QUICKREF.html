@@ -1,0 +1,55 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>手動CTFコマンド早見表 | Web Security Lab</title><link rel="stylesheet" href="assets/style.css"></head><body><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">◈ Web Security Lab</a><p class="tag">CTF / THEORY / DEFENSE</p><div class="menulist"><a class="menu" href="index.html">⌂ 学習メニュー</a><a class="menu" href="README.html">📚 全体README</a><a class="menu" href="00-http-trust-boundaries.html">00｜HTTPと「データが命令になる」境界</a>
+<a class="menu" href="01-sqli-ctf-field-manual.html">SQLインジェクション：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="01-sqli.html">01｜SQL Injection（SQLi）— 理論、観測、原因、対策</a>
+<a class="menu" href="02-burp-sqlmap.html">02｜Burp Suite → SQLmap — HTTPの再現と診断</a>
+<a class="menu" href="03-mysql-files-os.html">03｜MySQLとファイルシステム・OSシェルの権限境界</a>
+<a class="menu" href="04-xss.html">04｜XSS：反射型・蓄積型・DOM-basedを「入力→HTTP応答→JS」で理解</a>
+<a class="menu" href="05-php-pdo.html">05｜PHP PDO — `prepare()` + `:name1` がなぜSQLiを防ぐのか</a>
+<a class="menu" href="06-command-injection.html">06｜OS Command Injection — DNS照会を例に</a>
+<a class="menu" href="07-php2shell-2026.html">07｜PHP2Shell（2026年10月公開）とDBの関係</a>
+<a class="menu" href="08-ctf-method.html">08｜CTF調査の方法論と「高難度CTF」</a>
+<a class="menu" href="09-error-troubleshooting.html">09｜エラー・表示の読み方 — 一覧</a>
+<a class="menu" href="10-attack-chain-defense.html">10｜攻撃連鎖と多層防御</a>
+<a class="menu" href="11-code-review.html">11｜PHP Webアプリのコードレビュー演習 — 発見→原因→修正</a>
+<a class="menu" href="12-case-study.html">12｜匿名化CTFケーススタディ — 調査結果と不確実性</a>
+<a class="menu" href="13-xss-ctf-field-manual.html">XSS：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="14-os-command-ctf-field-manual.html">OSコマンドインジェクション：調査・原因・安全実装</a>
+<a class="menu" href="15-auth-access-csrf-file.html">認証・認可・CSRF・ファイルアップロード：CTF調査メモ</a>
+<a class="menu" href="16-logging-incident-response.html">CTFから実務へ：ログ・検知・インシデント対応</a>
+<a class="menu" href="17-ctf-scenarios-and-answers.html">CTF問題集：答え合わせと学習目的</a><a class="menu" href="18-http-manual-curl.html">18｜HTTPをコマンドで読む・再現する</a><a class="menu" href="19-os-command-manual.html">19｜OSコマンド注入・シェル文法</a><a class="menu" href="20-xss-manual-contexts.html">20｜XSSの文脈別・DOM手動検証</a><a class="menu" href="21-dirb-manual-discovery.html">21｜DIRB系の手動パス探索</a><a class="menu" href="22-burp-without-burp.html">22｜Burpの通信解析をコマンドで再現</a><a class="menu" href="23-ctf-tactics-decision-trees.html">23｜CTF高難度対応・判断木</a><a class="menu" href="24-other-web-ctf-reasoning.html">24｜認証・認可・アップロード等</a><a class="menu" href="25-manual-drills.html">25｜手動CTF問題集・解説付き</a><a class="menu" href="CTF_MANUAL_QUICKREF.html">★ 手動コマンド早見表</a></div></aside><main class="main"><p class="topnav"><a href="index.html">← 学習メニューへ戻る</a></p><article class="article"><h1>CTF 手動検証・コマンド早見表（ローカル/許可CTF）</h1>
+<h2>HTTP：まず生レスポンスを見る</h2>
+<pre><code class="language-bash">curl -i -G 'http://127.0.0.1:8767/lab/sql/vuln' --data-urlencode 'name=Travel Kit'
+curl -sS -o /dev/null -w 'HTTP=%{http_code} len=%{size_download} t=%{time_total}\n' 'http://127.0.0.1:8767/'
+</code></pre>
+<h2>SQLi：通常1件/0件/真/偽を混同しない</h2>
+<pre><code class="language-bash">curl -G 'http://127.0.0.1:8767/lab/sql/vuln' --data-urlencode &quot;name=' OR '1'='1' -- &quot;
+curl -G 'http://127.0.0.1:8767/lab/sql/vuln' --data-urlencode &quot;name=' OR '1'='2' -- &quot;
+</code></pre>
+<h2>XSS：HTTPレスポンス→DOM</h2>
+<pre><code class="language-bash">curl -G 'http://127.0.0.1:8767/lab/xss/vuln' --data-urlencode 'name=&lt;b&gt;MARK&lt;/b&gt;'
+</code></pre>
+<pre><code class="language-javascript">// DOMが読み込まれたあと、3番目のpを安全に変更
+const p = document.querySelectorAll('p')[2];
+if (p) p.textContent = 'CTF成功';
+</code></pre>
+<h2>OS：シェル文法（自分のターミナルだけで実行）</h2>
+<pre><code class="language-bash">true &amp;&amp; printf 'YES\n'
+false || printf 'FALLBACK\n'
+printf 'A\n'; printf 'B\n'
+</code></pre>
+<h2>DIRB系：候補パスを少数・低頻度で確認</h2>
+<pre><code class="language-bash">for x in public forbidden absent; do
+ curl -sS -o /dev/null -w &quot;$x %{http_code} %{size_download}\n&quot; \
+  &quot;http://127.0.0.1:8767/lab/map/$x&quot;
+done
+</code></pre>
+<h2>判断の鍵</h2>
+<ul>
+<li><strong>405</strong> → HTTP Method。<strong>500</strong> → エラー種別。<strong>200</strong> → 本文が期待通りか。</li>
+<li><strong>SQLi</strong> → SQLの文法に入力が混じるか。<strong>XSS</strong> → HTML/JSの文法に入力が混じるか。</li>
+<li><strong>OS注入</strong> → シェルとして実行されるか。<code>$_GET</code>だけでは対策にならない。</li>
+<li><strong>DIRB</strong> → 200/403/404を正規の未存在パスと比較。soft404に注意。</li>
+<li><strong>CTFメモ</strong> → HTTP入力、観測差、成立理由、必要権限、修正後結果を残す。</li>
+</ul>
+<p>詳細：<a href="18-http-manual-curl.html">HTTP</a> / <a href="19-os-command-manual.html">OS</a> / <a href="20-xss-manual-contexts.html">XSS</a> / <a href="21-dirb-manual-discovery.html">DIRB</a> / <a href="25-manual-drills.html">演習</a></p>
+</article><p class="footer"><a href="README.html">教材README</a> · <a href="SOURCES.html">根拠資料</a> · <a href="CTF_MANUAL_QUICKREF.html">コマンド早見表</a></p></main></div></body></html>

@@ -1,0 +1,133 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="description" content="CTFで学ぶSQLインジェクション、XSS、Burp Suite、PHP、MySQLの実践教材"><link rel="stylesheet" href="assets/style.css"><title>04｜XSS：反射型・蓄積型・DOM-basedを「入力→HTTP応答→JS」で理解 | Web Security Lab</title></head><body><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">◈ Web Security Lab</a><p class="tag">CTF / THEORY / DEFENSE</p><div class="menulist"><a class="menu" href="index.html">⌂ 学習メニュー</a><a class="menu" href="README.html">📚 全体README</a><a class="menu" href="00-http-trust-boundaries.html">00｜HTTPと「データが命令になる」境界</a>
+<a class="menu" href="01-sqli-ctf-field-manual.html">SQLインジェクション：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="01-sqli.html">01｜SQL Injection（SQLi）— 理論、観測、原因、対策</a>
+<a class="menu" href="02-burp-sqlmap.html">02｜Burp Suite → SQLmap — HTTPの再現と診断</a>
+<a class="menu" href="03-mysql-files-os.html">03｜MySQLとファイルシステム・OSシェルの権限境界</a>
+<a class="menu" href="04-xss.html">04｜XSS：反射型・蓄積型・DOM-basedを「入力→HTTP応答→JS」で理解</a>
+<a class="menu" href="05-php-pdo.html">05｜PHP PDO — `prepare()` + `:name1` がなぜSQLiを防ぐのか</a>
+<a class="menu" href="06-command-injection.html">06｜OS Command Injection — DNS照会を例に</a>
+<a class="menu" href="07-php2shell-2026.html">07｜PHP2Shell（2026年10月公開）とDBの関係</a>
+<a class="menu" href="08-ctf-method.html">08｜CTF調査の方法論と「高難度CTF」</a>
+<a class="menu" href="09-error-troubleshooting.html">09｜エラー・表示の読み方 — 一覧</a>
+<a class="menu" href="10-attack-chain-defense.html">10｜攻撃連鎖と多層防御</a>
+<a class="menu" href="11-code-review.html">11｜PHP Webアプリのコードレビュー演習 — 発見→原因→修正</a>
+<a class="menu" href="12-case-study.html">12｜匿名化CTFケーススタディ — 調査結果と不確実性</a>
+<a class="menu" href="13-xss-ctf-field-manual.html">XSS：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="14-os-command-ctf-field-manual.html">OSコマンドインジェクション：調査・原因・安全実装</a>
+<a class="menu" href="15-auth-access-csrf-file.html">認証・認可・CSRF・ファイルアップロード：CTF調査メモ</a>
+<a class="menu" href="16-logging-incident-response.html">CTFから実務へ：ログ・検知・インシデント対応</a>
+<a class="menu" href="17-ctf-scenarios-and-answers.html">CTF問題集：答え合わせと学習目的</a><a class="menu" href="18-http-manual-curl.html">18｜HTTPをコマンドで読む・再現する</a><a class="menu" href="19-os-command-manual.html">19｜OSコマンド注入・シェル文法</a><a class="menu" href="20-xss-manual-contexts.html">20｜XSSの文脈別・DOM手動検証</a><a class="menu" href="21-dirb-manual-discovery.html">21｜DIRB系の手動パス探索</a><a class="menu" href="22-burp-without-burp.html">22｜Burpの通信解析をコマンドで再現</a><a class="menu" href="23-ctf-tactics-decision-trees.html">23｜CTF高難度対応・判断木</a><a class="menu" href="24-other-web-ctf-reasoning.html">24｜認証・認可・アップロード等</a><a class="menu" href="25-manual-drills.html">25｜手動CTF問題集・解説付き</a><a class="menu" href="CTF_MANUAL_QUICKREF.html">★ 手動コマンド早見表</a></div></aside><main class="main"><p class="topnav"><a href="index.html">← 学習メニューへ戻る</a></p><article class="article"><h1>04｜XSS：反射型・蓄積型・DOM-basedを「入力→HTTP応答→JS」で理解</h1>
+<h2>何が起きるのか</h2>
+<p><strong>ユーザーが入力した文字列を、ブラウザが意図しないHTML/JavaScriptとして解釈すると、サイトのオリジンでスクリプトが実行される可能性がある。</strong> 入力の保存有無だけで脆弱性が決まるのではなく、「どの場面で危険な解釈をするか」が重要。</p>
+<pre><code class="language-mermaid">flowchart LR
+ I[ユーザー入力] --&gt;|反射型| W[Webサーバーがレスポンスへ挿入]
+ I --&gt;|蓄積型| DB[(投稿・DB等)] --&gt; W
+ I --&gt;|DOM型| J[ブラウザJSがURL等を読む]
+ W --&gt; B[ブラウザがHTML解析]
+ J --&gt; S[危険なDOM sink]
+ B --&gt; E[スクリプト実行の可能性]
+ S --&gt; E
+</code></pre>
+<h2>3種類を比較</h2>
+<table>
+<thead>
+<tr>
+  <th>種類</th>
+  <th>入力源</th>
+  <th>危険な処理</th>
+  <th>主な観測箇所</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>反射型（Reflected）</td>
+  <td>検索欄、URL、エラー表示</td>
+  <td>サーバーが安全にエスケープせずHTMLへ反射</td>
+  <td>Network &gt; Response</td>
+</tr>
+<tr>
+  <td>蓄積型（Stored）</td>
+  <td>コメント、レビュー、プロフィール</td>
+  <td>保存値が閲覧時にHTMLとして扱われる</td>
+  <td>保存前後のResponse / 別セッション</td>
+</tr>
+<tr>
+  <td>DOM-based</td>
+  <td><code>location.search</code>、<code>hash</code>等</td>
+  <td>JSが入力を<code>innerHTML</code>等へ渡す</td>
+  <td>Sources / Elements / Console</td>
+</tr>
+</tbody>
+</table>
+<p>DOM-basedは反射/保存データと組み合わさることもあるため、排他的な分類とは限らない。</p>
+<h2>HTTPとDOM（3番目の<code>&lt;p&gt;</code>を例に）</h2>
+<pre><code class="language-html">&lt;p&gt;1番目&lt;/p&gt;
+&lt;p&gt;2番目&lt;/p&gt;
+&lt;p id=&quot;third&quot;&gt;3番目（書き換え前）&lt;/p&gt;
+</code></pre>
+<pre><code class="language-javascript">// 正規のページ内JavaScriptでDOMを変更する例
+const element = document.querySelectorAll('p')[2];
+if (element) element.textContent = 'CTF成功';
+
+// IDがある場合
+const byId = document.getElementById('third');
+if (byId) byId.textContent = 'CTF成功';
+</code></pre>
+<ul>
+<li><code>[2]</code>は0起点の<strong>3番目</strong>（ページに別の<code>&lt;p&gt;</code>が前にあると対象もずれる）。</li>
+<li><code>textContent</code>は<strong>テキストとして</strong>挿入する。<code>innerHTML</code>は<strong>HTML構文として解析</strong>するため、信頼できない文字列を入れてはいけない。</li>
+<li>このJSは<strong>DOM</strong>を書き換える。「ページのソースを表示」にあるオリジナルのHTTPレスポンスそのものは通常変わらない。</li>
+<li><code>http://example.test/test.html?name=...</code> のURLに文字列を付けただけでは<strong>コード実行は起きない</strong>。サーバー反射またはJSの危険な取り込みが必要。</li>
+</ul>
+<h2>危険なデータ流れと安全な流れ</h2>
+<pre><code class="language-javascript">// NG（信頼できない外部入力をHTMLとして解釈）
+container.innerHTML = userInput;
+
+// OK（単なるテキストとして表示）
+container.textContent = userInput;
+</code></pre>
+<pre><code class="language-php">// HTML本文へのテキスト表示としての基本形
+print '&lt;p&gt;'.htmlspecialchars($input, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'&lt;/p&gt;';
+</code></pre>
+<p>HTML本文、属性、JavaScript文字列、URL、CSSでは<strong>必要なエンコード・検証が異なる</strong>。上記<code>htmlspecialchars</code>の例を、JavaScript文脈へそのまま適用して安全と判断しない。CSPやCookie属性は補助策であり、出力エンコーディングの代替ではない。</p>
+<h2>CTFの着眼点（無害な検証から）</h2>
+<ol>
+<li>一意なテキストで<strong>入力の反射</strong>を調べる。</li>
+<li>Responseのどの文脈（本文/属性/JS/URL）にあるかを確認。</li>
+<li>HTMLエンコードの有無、CSP、DOM sinkの有無を調べる。</li>
+<li>「編集したDOMだけ」か「ページをリロード・共有しても再現するか」を分ける。</li>
+<li>メールで送るURLが課題のとき、<strong>リンクの存在だけではXSS成立を証明しない</strong>。ページ側の読み取り・解釈が必要。</li>
+</ol>
+<h2>原因と対策の一対一対応</h2>
+<table>
+<thead>
+<tr>
+  <th>原因</th>
+  <th>対策</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>動的HTMLに生の入力</td>
+  <td>HTML文脈に応じて出力エンコード</td>
+</tr>
+<tr>
+  <td><code>innerHTML</code> へ未検証値</td>
+  <td><code>textContent</code> 等の安全なsinkへ変更</td>
+</tr>
+<tr>
+  <td>任意HTMLを許容する要件</td>
+  <td>実績あるサニタイザー＋許可するタグ/属性の設計</td>
+</tr>
+<tr>
+  <td>保存値を無加工で再表示</td>
+  <td>表示時にエンコード。SQLi対策だけでは不足</td>
+</tr>
+<tr>
+  <td>CSPなし</td>
+  <td>CSPを多層防御として導入（単独依存しない）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>根拠</strong>：<a href="https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html">OWASP XSS Prevention</a>、<a href="https://portswigger.net/web-security/cross-site-scripting">PortSwigger XSS</a>、<a href="https://portswigger.net/web-security/cross-site-scripting/dom-based">DOM XSS</a>。</p>
+</article><p class="footer">2026-10-24 / 教育・許可された検証専用。実データは公開しない。</p></main></div></body></html>

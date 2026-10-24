@@ -1,0 +1,255 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>Web Security Lab README | Web Security Lab</title><link rel="stylesheet" href="assets/style.css"></head><body><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">◈ Web Security Lab</a><p class="tag">CTF / THEORY / DEFENSE</p><div class="menulist"><a class="menu" href="index.html">⌂ 学習メニュー</a><a class="menu" href="README.html">📚 全体README</a><a class="menu" href="00-http-trust-boundaries.html">00｜HTTPと「データが命令になる」境界</a>
+<a class="menu" href="01-sqli-ctf-field-manual.html">SQLインジェクション：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="01-sqli.html">01｜SQL Injection（SQLi）— 理論、観測、原因、対策</a>
+<a class="menu" href="02-burp-sqlmap.html">02｜Burp Suite → SQLmap — HTTPの再現と診断</a>
+<a class="menu" href="03-mysql-files-os.html">03｜MySQLとファイルシステム・OSシェルの権限境界</a>
+<a class="menu" href="04-xss.html">04｜XSS：反射型・蓄積型・DOM-basedを「入力→HTTP応答→JS」で理解</a>
+<a class="menu" href="05-php-pdo.html">05｜PHP PDO — `prepare()` + `:name1` がなぜSQLiを防ぐのか</a>
+<a class="menu" href="06-command-injection.html">06｜OS Command Injection — DNS照会を例に</a>
+<a class="menu" href="07-php2shell-2026.html">07｜PHP2Shell（2026年10月公開）とDBの関係</a>
+<a class="menu" href="08-ctf-method.html">08｜CTF調査の方法論と「高難度CTF」</a>
+<a class="menu" href="09-error-troubleshooting.html">09｜エラー・表示の読み方 — 一覧</a>
+<a class="menu" href="10-attack-chain-defense.html">10｜攻撃連鎖と多層防御</a>
+<a class="menu" href="11-code-review.html">11｜PHP Webアプリのコードレビュー演習 — 発見→原因→修正</a>
+<a class="menu" href="12-case-study.html">12｜匿名化CTFケーススタディ — 調査結果と不確実性</a>
+<a class="menu" href="13-xss-ctf-field-manual.html">XSS：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="14-os-command-ctf-field-manual.html">OSコマンドインジェクション：調査・原因・安全実装</a>
+<a class="menu" href="15-auth-access-csrf-file.html">認証・認可・CSRF・ファイルアップロード：CTF調査メモ</a>
+<a class="menu" href="16-logging-incident-response.html">CTFから実務へ：ログ・検知・インシデント対応</a>
+<a class="menu" href="17-ctf-scenarios-and-answers.html">CTF問題集：答え合わせと学習目的</a><a class="menu" href="18-http-manual-curl.html">18｜HTTPをコマンドで読む・再現する</a><a class="menu" href="19-os-command-manual.html">19｜OSコマンド注入・シェル文法</a><a class="menu" href="20-xss-manual-contexts.html">20｜XSSの文脈別・DOM手動検証</a><a class="menu" href="21-dirb-manual-discovery.html">21｜DIRB系の手動パス探索</a><a class="menu" href="22-burp-without-burp.html">22｜Burpの通信解析をコマンドで再現</a><a class="menu" href="23-ctf-tactics-decision-trees.html">23｜CTF高難度対応・判断木</a><a class="menu" href="24-other-web-ctf-reasoning.html">24｜認証・認可・アップロード等</a><a class="menu" href="25-manual-drills.html">25｜手動CTF問題集・解説付き</a><a class="menu" href="CTF_MANUAL_QUICKREF.html">★ 手動コマンド早見表</a></div></aside><main class="main"><p class="topnav"><a href="index.html">← 学習メニューへ戻る</a></p><article class="article"><h1>Web Security Lab — 実戦ハンドブック（CTF版）</h1>
+<p><strong>手動攻略版更新：2026-10-24</strong> | GitHubで読むMarkdown + Webで開く学習メニュー + ローカル演習</p>
+<p><a href="index.html"><strong>▶ クリック式のWeb学習メニューを開く</strong></a> · <a href="01-sqli-ctf-field-manual.html"><strong>SQLi実戦マニュアル</strong></a> · <a href="lab/README.md"><strong>ローカル演習</strong></a> · <a href="SOURCES.html"><strong>一次資料一覧</strong></a></p>
+<blockquote>
+<p>既存 <code>security-web-lab</code> を壊さず、<code>security-handbook/</code> フォルダだけを追加できる構成です。既存READMEの目次は自動更新されないので、同梱 <code>README_APPEND.md</code> のリンクを追記してください。</p>
+</blockquote>
+<h2>手動攻略編（ツール不要で理屈を追う8章）</h2>
+<p>すべてローカル／許可CTFで、<strong>入力→処理系→生HTTP応答→DOM/DB/OS→原因→修正→再テスト</strong>を理解する構成。</p>
+<table>
+<thead>
+<tr>
+  <th>章</th>
+  <th>内容とコマンド練習</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><a href="18-http-manual-curl.html">18｜HTTPをコマンドで読む・再現する</a></td>
+  <td>HTTP・シェル・HTMLの意味を手で追って原因を切り分ける</td>
+</tr>
+<tr>
+  <td><a href="19-os-command-manual.html">19｜OSコマンド注入・シェル文法</a></td>
+  <td>HTTP・シェル・HTMLの意味を手で追って原因を切り分ける</td>
+</tr>
+<tr>
+  <td><a href="20-xss-manual-contexts.html">20｜XSSの文脈別・DOM手動検証</a></td>
+  <td>HTTP・シェル・HTMLの意味を手で追って原因を切り分ける</td>
+</tr>
+<tr>
+  <td><a href="21-dirb-manual-discovery.html">21｜DIRB系の手動パス探索</a></td>
+  <td>HTTP・シェル・HTMLの意味を手で追って原因を切り分ける</td>
+</tr>
+<tr>
+  <td><a href="22-burp-without-burp.html">22｜Burpの通信解析をコマンドで再現</a></td>
+  <td>HTTP・シェル・HTMLの意味を手で追って原因を切り分ける</td>
+</tr>
+<tr>
+  <td><a href="23-ctf-tactics-decision-trees.html">23｜CTF高難度対応・判断木</a></td>
+  <td>HTTP・シェル・HTMLの意味を手で追って原因を切り分ける</td>
+</tr>
+<tr>
+  <td><a href="24-other-web-ctf-reasoning.html">24｜認証・認可・アップロード等</a></td>
+  <td>HTTP・シェル・HTMLの意味を手で追って原因を切り分ける</td>
+</tr>
+<tr>
+  <td><a href="25-manual-drills.html">25｜手動CTF問題集・解説付き</a></td>
+  <td>HTTP・シェル・HTMLの意味を手で追って原因を切り分ける</td>
+</tr>
+</tbody>
+</table>
+<p><a href="CTF_MANUAL_QUICKREF.html"><strong>▶ 手動CTF・1枚早見表</strong></a> ｜ <a href="25-manual-drills.html"><strong>▶ 演習問題</strong></a></p>
+<p><strong>今回増えた演習</strong>：DOM source/sink の脆弱版・安全版、HTTPパス探索(200/403/404)、HTTP応答の比較。<code>lab/server.py</code>は外部コマンド実行やファイル書込みを行わず、127.0.0.1に限定して起動する。</p>
+<hr />
+<h2>拡張した実戦マニュアル</h2>
+<table>
+<thead>
+<tr>
+  <th>テーマ</th>
+  <th>解説</th>
+  <th>実際にできること</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>SQLインジェクション</td>
+  <td><a href="01-sqli-ctf-field-manual.html">CTFフィールドマニュアル</a></td>
+  <td>真偽、UNION、Error、Burp→sqlmap、エラー判定、修正確認</td>
+</tr>
+<tr>
+  <td>XSS</td>
+  <td><a href="13-xss-ctf-field-manual.html">CTFフィールドマニュアル</a></td>
+  <td>反射・蓄積・DOM、HTTP→DOM、3番目のp要素、対策</td>
+</tr>
+<tr>
+  <td>OSコマンド</td>
+  <td><a href="14-os-command-ctf-field-manual.html">実践ノート</a></td>
+  <td>PHP DNS例、OSシェルとの境界、修正</td>
+</tr>
+<tr>
+  <td>認証・認可・CSRF・ファイル</td>
+  <td><a href="15-auth-access-csrf-file.html">防御レビュー</a></td>
+  <td>IDOR・権限、CSRF、アップロードの危険</td>
+</tr>
+<tr>
+  <td>監視・インシデント</td>
+  <td><a href="16-logging-incident-response.html">ログ/検知</a></td>
+  <td>エラー原因、証拠の残し方、検知</td>
+</tr>
+<tr>
+  <td>問題集</td>
+  <td><a href="17-ctf-scenarios-and-answers.html">解説付き演習</a></td>
+  <td>ローカル課題と答え合わせ</td>
+</tr>
+<tr>
+  <td>実行環境</td>
+  <td><a href="lab/README.md">Python標準ライブラリだけのローカルCTF</a></td>
+  <td>脆弱/安全SQLiとXSSを比較</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>以前の基礎ノート（収録済み）</h2>
+<p><strong>更新基準日：2026-10-24 ｜ 言語：日本語 ｜ 公開用（実環境の秘密情報なし）</strong></p>
+<p>CTFで学んだWeb攻撃の原理を、<strong>HTTP通信 → 解釈される言語 → 脆弱性が生まれる境界 → 観測方法 → 対策 → 根拠</strong>の順に整理した学習資料です。単なるコマンド集ではなく「なぜ成立するのか」を重視します。</p>
+<blockquote>
+<p><strong>使用条件</strong>：自分で管理する検証環境、または明示的に許可されたCTFのみで実行してください。記載のホスト名、DB名、利用者名、認証情報は架空です。演習環境で得た実IP、Cookie、パスワード、フラグ、シェルファイル等は公開しません。</p>
+</blockquote>
+<h2>学習マップ</h2>
+<pre><code class="language-mermaid">flowchart TD
+ A[ユーザー入力] --&gt; B[HTTPリクエスト]
+ B --&gt; C[Webアプリ: PHP/Python等]
+ C --&gt; D{入力が何として扱われる?}
+ D --&gt;|SQL文の構造| S[SQL Injection]
+ D --&gt;|OSシェルの構造| O[OS Command Injection]
+ D --&gt;|HTML/JavaScript| X[XSS]
+ C --&gt; R[ランタイム/依存ライブラリ]
+ R --&gt; P[PHPランタイム脆弱性など]
+ S --&gt; SD[パラメータ化 / DB最小権限]
+ O --&gt; OD[シェル排除 / API利用 / 入力検証]
+ X --&gt; XD[文脈別出力エンコード / 安全なDOM API]
+ P --&gt; PD[公式修正版へ更新 / 隔離 / 監視]
+</code></pre>
+<h2>目次</h2>
+<table>
+<thead>
+<tr>
+  <th>ファイル</th>
+  <th>理解できること</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><a href="00-http-trust-boundaries.html">00｜HTTPと信頼境界</a></td>
+  <td>リクエスト/レスポンス、パーサー、インジェクションの共通原理</td>
+</tr>
+<tr>
+  <td><a href="01-sqli.html">01｜SQLインジェクション</a></td>
+  <td>Boolean Blind / Error-based / UNION / 原因と防御</td>
+</tr>
+<tr>
+  <td><a href="02-burp-sqlmap.html">02｜BurpとSQLmap</a></td>
+  <td>GET・POST、リクエスト保存、判定、エラーの読み方</td>
+</tr>
+<tr>
+  <td><a href="03-mysql-files-os.html">03｜DBとファイルシステム</a></td>
+  <td>FILE権限、<code>secure_file_priv</code>、OSシェルとの境界、<code>find</code></td>
+</tr>
+<tr>
+  <td><a href="04-xss.html">04｜XSS</a></td>
+  <td>反射型・蓄積型・DOM型、<code>&lt;p&gt;</code>変更、<code>innerHTML</code>の危険性</td>
+</tr>
+<tr>
+  <td><a href="05-php-pdo.html">05｜PHP PDO</a></td>
+  <td><code>prepare()</code>、<code>:name1</code>、<code>bindValue()</code>、認可・権限制御</td>
+</tr>
+<tr>
+  <td><a href="06-command-injection.html">06｜OSコマンドインジェクション</a></td>
+  <td><code>exec(nslookup)</code>の危険、DNS専用API、ドメイン検証</td>
+</tr>
+<tr>
+  <td><a href="07-php2shell-2026.html">07｜PHP2Shell 2026</a></td>
+  <td>ランタイム脆弱性とDB、影響条件、公式修正版</td>
+</tr>
+<tr>
+  <td><a href="08-ctf-method.html">08｜CTF調査方法</a></td>
+  <td>仮説→観測→結論、誤判定回避、上級CTFの考え方</td>
+</tr>
+<tr>
+  <td><a href="09-error-troubleshooting.html">09｜エラー辞典</a></td>
+  <td>HTTP 405/500、DBエラー、No output、シェルの診断</td>
+</tr>
+<tr>
+  <td><a href="10-attack-chain-defense.html">10｜攻撃連鎖と多層防御</a></td>
+  <td>SQLiから別の権限領域へ波及する条件と遮断ポイント</td>
+</tr>
+<tr>
+  <td><a href="11-code-review.html">11｜防御コードレビュー</a></td>
+  <td>発見した脆弱性をどのコードで直すか</td>
+</tr>
+<tr>
+  <td><a href="12-case-study.html">12｜CTFケーススタディ</a></td>
+  <td>実際の検証で何が分かり何が未検証なのか</td>
+</tr>
+<tr>
+  <td><a href="SOURCES.html">証拠・参考文献</a></td>
+  <td>公式一次資料、参照先と検証限界</td>
+</tr>
+<tr>
+  <td><a href="PUBLICATION_CHECKLIST.md">公開前チェック</a></td>
+  <td>秘密情報・検証根拠・安全性のレビュー</td>
+</tr>
+</tbody>
+</table>
+<h2>要点早見表</h2>
+<table>
+<thead>
+<tr>
+  <th>技術</th>
+  <th>根本原因</th>
+  <th>代表的な対策</th>
+  <th>よくある誤解</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>SQLi</td>
+  <td>入力がSQL構造の一部になる</td>
+  <td>パラメータ化・識別子の許可リスト</td>
+  <td><code>prepare</code>という文字があるだけで安全</td>
+</tr>
+<tr>
+  <td>XSS</td>
+  <td>信頼できない値が実行可能なHTML/JSとして扱われる</td>
+  <td>出力文脈別エンコード・安全なDOM API</td>
+  <td>DB保存時のSQLi対策でXSSも防げる</td>
+</tr>
+<tr>
+  <td>OSコマンド注入</td>
+  <td>入力がシェル構造の一部になる</td>
+  <td>OSコマンドをやめて専用API</td>
+  <td><code>$_GET</code>へ代入すれば安全</td>
+</tr>
+<tr>
+  <td>PHPランタイム</td>
+  <td>アプリコード外の実行環境に欠陥</td>
+  <td>修正版の適用、被害縮小策</td>
+  <td><code>PDO::prepare()</code>でPHPエンジンのRCEも防げる</td>
+</tr>
+</tbody>
+</table>
+<h2>手元で安全に確かめる</h2>
+<p><code>examples/</code> に<strong>防御実装だけ</strong>を置きました。実行する場合もローカル/隔離環境で、PHP CLIおよび必要な拡張を確認してください。攻撃用Webシェルや実サーバーの抽出データは収録していません。</p>
+<h2>GitHubへの追加</h2>
+<p>既存リポジトリのルートにこの <code>security-notes</code> フォルダを追加すれば、既存のREADMEや教材を上書きしません。GitHubのMarkdownとMermaidでそのまま閲覧できます。Git操作の例は <a href="PUBLICATION_CHECKLIST.md">公開前チェック</a> に記載。</p>
+<h2>学習記録の位置づけ</h2>
+<p>過去の演習での表示（例：<code>Werkzeug/Python</code>、<code>name</code>パラメータ、<code>Boolean-based</code>、<code>No output</code>）は<strong>観測例</strong>です。全ての環境に当てはまる一般則ではありません。資料中の「観測」「推測」「公式仕様」を区別し、過剰な結論を出さないようにしています。</p>
+</article><p class="footer"><a href="README.html">教材README</a> · <a href="SOURCES.html">根拠資料</a> · <a href="CTF_MANUAL_QUICKREF.html">コマンド早見表</a></p></main></div></body></html>

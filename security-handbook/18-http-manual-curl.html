@@ -1,0 +1,183 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>18｜HTTPをコマンドで読む・再現する | Web Security Lab</title><link rel="stylesheet" href="assets/style.css"></head><body><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">◈ Web Security Lab</a><p class="tag">CTF / THEORY / DEFENSE</p><div class="menulist"><a class="menu" href="index.html">⌂ 学習メニュー</a><a class="menu" href="README.html">📚 全体README</a><a class="menu" href="00-http-trust-boundaries.html">00｜HTTPと「データが命令になる」境界</a>
+<a class="menu" href="01-sqli-ctf-field-manual.html">SQLインジェクション：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="01-sqli.html">01｜SQL Injection（SQLi）— 理論、観測、原因、対策</a>
+<a class="menu" href="02-burp-sqlmap.html">02｜Burp Suite → SQLmap — HTTPの再現と診断</a>
+<a class="menu" href="03-mysql-files-os.html">03｜MySQLとファイルシステム・OSシェルの権限境界</a>
+<a class="menu" href="04-xss.html">04｜XSS：反射型・蓄積型・DOM-basedを「入力→HTTP応答→JS」で理解</a>
+<a class="menu" href="05-php-pdo.html">05｜PHP PDO — `prepare()` + `:name1` がなぜSQLiを防ぐのか</a>
+<a class="menu" href="06-command-injection.html">06｜OS Command Injection — DNS照会を例に</a>
+<a class="menu" href="07-php2shell-2026.html">07｜PHP2Shell（2026年10月公開）とDBの関係</a>
+<a class="menu" href="08-ctf-method.html">08｜CTF調査の方法論と「高難度CTF」</a>
+<a class="menu" href="09-error-troubleshooting.html">09｜エラー・表示の読み方 — 一覧</a>
+<a class="menu" href="10-attack-chain-defense.html">10｜攻撃連鎖と多層防御</a>
+<a class="menu" href="11-code-review.html">11｜PHP Webアプリのコードレビュー演習 — 発見→原因→修正</a>
+<a class="menu" href="12-case-study.html">12｜匿名化CTFケーススタディ — 調査結果と不確実性</a>
+<a class="menu" href="13-xss-ctf-field-manual.html">XSS：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="14-os-command-ctf-field-manual.html">OSコマンドインジェクション：調査・原因・安全実装</a>
+<a class="menu" href="15-auth-access-csrf-file.html">認証・認可・CSRF・ファイルアップロード：CTF調査メモ</a>
+<a class="menu" href="16-logging-incident-response.html">CTFから実務へ：ログ・検知・インシデント対応</a>
+<a class="menu" href="17-ctf-scenarios-and-answers.html">CTF問題集：答え合わせと学習目的</a><a class="menu" href="18-http-manual-curl.html">18｜HTTPをコマンドで読む・再現する</a><a class="menu" href="19-os-command-manual.html">19｜OSコマンド注入・シェル文法</a><a class="menu" href="20-xss-manual-contexts.html">20｜XSSの文脈別・DOM手動検証</a><a class="menu" href="21-dirb-manual-discovery.html">21｜DIRB系の手動パス探索</a><a class="menu" href="22-burp-without-burp.html">22｜Burpの通信解析をコマンドで再現</a><a class="menu" href="23-ctf-tactics-decision-trees.html">23｜CTF高難度対応・判断木</a><a class="menu" href="24-other-web-ctf-reasoning.html">24｜認証・認可・アップロード等</a><a class="menu" href="25-manual-drills.html">25｜手動CTF問題集・解説付き</a><a class="menu" href="CTF_MANUAL_QUICKREF.html">★ 手動コマンド早見表</a></div></aside><main class="main"><p class="topnav"><a href="index.html">← 学習メニューへ戻る</a></p><article class="article"><h1>18｜HTTPをコマンドで読む・再現する — Burpに頼らない観測</h1>
+<blockquote>
+<p>対象は同梱の <code>127.0.0.1:8767</code>、または主催者が明示的に許可したCTF。実Cookie・APIキー・フラグはログやGitHubへ保存しない。</p>
+</blockquote>
+<h2>1. 一番大切な考え方</h2>
+<p>ブラウザの画面は<strong>HTTPレスポンスを加工した最終結果</strong>であって、サーバーからの生データそのものではない。HTTPレスポンスとDOMを分離して観測する。CTF中は「1回で1変数だけ変える」「基準リクエストを保存する」「差分に理由を付ける」。</p>
+<pre><code class="language-text">URL → URL解析 → HTTPリクエスト(GET/POST, path, header, body)
+→ Webサーバー → アプリ(PHP/Python) → DB/OS → HTTPレスポンス
+→ HTMLパーサー → JavaScript → DOM → 画面
+</code></pre>
+<h2>2. HTTPリクエストを手で読めるようにする</h2>
+<pre><code class="language-http">GET /lab/sql/vuln?name=Travel%20Kit HTTP/1.1
+Host: 127.0.0.1:8767
+Accept: text/html
+User-Agent: CTF-Learning
+Connection: close
+</code></pre>
+<ul>
+<li><code>GET</code> はメソッド。<strong>GETは常に安全、POSTは常に変更系というわけではない</strong>。</li>
+<li><code>/lab/sql/vuln</code> はpath、<code>name=...</code> はquery。<code>Host</code> は接続先の仮想ホストの選択に影響。</li>
+<li><code>Content-Type</code> は主に<strong>メッセージの本文</strong>の形式を表す。POSTで<code>application/x-www-form-urlencoded</code>ならフォームデータとして解析されることが多い。</li>
+<li><code>Cookie</code> は認証や状態管理に使われる場合がある。機密なので公開禁止。</li>
+</ul>
+<h2>3. curlを使ってHTTPを手動観測する</h2>
+<p>まず同梱ラボを起動：<code>cd security-handbook &amp;&amp; python3 lab/server.py</code>。</p>
+<pre><code class="language-bash"># ステータス・ヘッダー・本文を観測
+curl -i 'http://127.0.0.1:8767/lab/sql/vuln?name=Travel%20Kit'
+
+# GET値をシェルで壊さずにURLエンコード
+curl -i -G 'http://127.0.0.1:8767/lab/sql/vuln' \
+  --data-urlencode 'name=Travel Kit'
+
+# 通信詳細：接続先、送信メソッド、受信ヘッダー
+curl -v 'http://127.0.0.1:8767/lab/sql/safe?name=Camera'
+
+# HTTPコードと本文サイズの小さな比較
+curl -sS -o /dev/null -w 'HTTP=%{http_code} bytes=%{size_download} sec=%{time_total}\n' \
+  'http://127.0.0.1:8767/lab/sql/safe?name=Travel%20Kit'
+
+# 取得したレスポンスをファイルへ（ローカル演習だけ）
+curl -sS -D headers.txt -o response.html \
+  'http://127.0.0.1:8767/lab/xss/safe?name=CTFTEST'
+</code></pre>
+<p><code>-G</code> はクエリとして送信、<code>--data-urlencode</code> は適切にURLエンコード、<code>-i</code> はヘッダーを表示。<code>-v</code> は機密ヘッダーも出ることがあるため共有しない。<code>-sS</code> は進捗表示を抑えつつエラーを表示する。</p>
+<h2>4. POSTとJSONの違い（構文練習）</h2>
+<pre><code class="language-bash"># このラボはGET専用。POSTは未実装で501が返る（実装によって405もあり得る）
+curl -i -X POST 'http://127.0.0.1:8767/lab/sql/vuln' \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data 'name=Travel+Kit'
+
+# JSONを送信するHTTPの概念（このラボにはJSON APIはない）
+curl -i -X POST 'http://127.0.0.1:8767/lab/demo/json' \
+  -H 'Content-Type: application/json' \
+  --data '{&quot;name&quot;:&quot;Travel Kit&quot;}'
+</code></pre>
+<p><code>-X POST</code>だけではパラメータは送れない。<code>-d</code>は本文を送信し、通常POSTを選択する。リクエスト形式を誤った場合の405・400・415を区別する。</p>
+<h2>5. 観測の3点セット：正常・不一致・異常</h2>
+<table>
+<thead>
+<tr>
+  <th>比較</th>
+  <th>同じにすること</th>
+  <th>変えること</th>
+  <th>学べること</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>A: 正常</td>
+  <td>path, method, headers</td>
+  <td><code>name=Travel Kit</code></td>
+  <td>1件表示を確認</td>
+</tr>
+<tr>
+  <td>B: 不一致</td>
+  <td>同上</td>
+  <td><code>name=NoSuchItem</code></td>
+  <td>0件の通常動作</td>
+</tr>
+<tr>
+  <td>C: 異常</td>
+  <td>同上</td>
+  <td><code>name='</code></td>
+  <td>入力の構文処理と例外の違い</td>
+</tr>
+</tbody>
+</table>
+<p><code>500</code>は脆弱性の証明ではない。<code>404</code>はファイルなしと断定できない。<code>302</code>は<code>Location</code>、<code>Set-Cookie</code>、ログイン状態も見る。200でも内容が404相当の<strong>soft 404</strong>がある。</p>
+<h2>6. HTTPステータスを誤読しない</h2>
+<table>
+<thead>
+<tr>
+  <th>ステータス</th>
+  <th>一般的な意味</th>
+  <th>CTFでの着眼</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>200</td>
+  <td>応答は成功</td>
+  <td>本文・件数・長さ・DOM差を比較</td>
+</tr>
+<tr>
+  <td>301/302/307/308</td>
+  <td>リダイレクト</td>
+  <td><code>Location</code>と元のURLの違い。メソッド変化にも注意</td>
+</tr>
+<tr>
+  <td>401</td>
+  <td>認証を要する</td>
+  <td><code>WWW-Authenticate</code>、認証方法</td>
+</tr>
+<tr>
+  <td>403</td>
+  <td>アクセス拒否</td>
+  <td>存在が示唆されても権限は別</td>
+</tr>
+<tr>
+  <td>404</td>
+  <td>対象が見つからない</td>
+  <td>ルート分岐・soft404と比べる</td>
+</tr>
+<tr>
+  <td>405</td>
+  <td>メソッド不許可</td>
+  <td>GET/POSTおよび<code>Allow</code>ヘッダー</td>
+</tr>
+<tr>
+  <td>415</td>
+  <td>メディア形式非対応</td>
+  <td>Content-Typeとボディの形式</td>
+</tr>
+<tr>
+  <td>500</td>
+  <td>サーバー内部エラー</td>
+  <td>SQLエラーとは限らない。公開ログへ機密を出さない</td>
+</tr>
+</tbody>
+</table>
+<h2>7. URLエンコード・HTMLエンコード・JavaScript文字列は別</h2>
+<pre><code class="language-text">URL : name=%3Cb%3ECTF%3C%2Fb%3E
+HTTPの受信側でURL復号 → &lt;b&gt;CTF&lt;/b&gt;
+HTMLの安全な本文表示 → &amp;lt;b&amp;gt;CTF&amp;lt;/b&amp;gt;
+DOM表示 → 「&lt;b&gt;CTF&lt;/b&gt;」という文字の表示（タグ実体化しない）
+</code></pre>
+<p><code>%3C</code> と <code>&amp;lt;</code> は別の処理。二重にエンコードしたため動かないケースと、意図せず二重にデコードする設計上の問題を区別する。一般に<strong>入力の復号と出力エンコードを混同しない</strong>。</p>
+<h2>8. 記録テンプレート</h2>
+<pre><code class="language-text">日時・許可スコープ:
+HTTP: GET /lab/sql/vuln?name=...
+変化させた箇所: nameのみ
+期待: ...
+実際: HTTP=... / bytes=... / 本文=... / DOM=...
+確定できたこと:
+まだ証明できていないこと:
+次の仮説:
+修正案と再検証:
+</code></pre>
+<h2>一次資料</h2>
+<ul>
+<li><a href="https://curl.se/docs/manpage.html">curl manpage</a></li>
+<li><a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Overview">MDN HTTP overview</a></li>
+<li><a href="https://portswigger.net/burp/documentation/desktop/tools/repeater">PortSwigger Burp Repeater</a></li>
+</ul>
+</article><p class="footer"><a href="README.html">教材README</a> · <a href="SOURCES.html">根拠資料</a> · <a href="CTF_MANUAL_QUICKREF.html">コマンド早見表</a></p></main></div></body></html>

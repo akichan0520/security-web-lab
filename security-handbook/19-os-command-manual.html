@@ -1,0 +1,165 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>19｜OSコマンド注入・シェル文法 | Web Security Lab</title><link rel="stylesheet" href="assets/style.css"></head><body><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">◈ Web Security Lab</a><p class="tag">CTF / THEORY / DEFENSE</p><div class="menulist"><a class="menu" href="index.html">⌂ 学習メニュー</a><a class="menu" href="README.html">📚 全体README</a><a class="menu" href="00-http-trust-boundaries.html">00｜HTTPと「データが命令になる」境界</a>
+<a class="menu" href="01-sqli-ctf-field-manual.html">SQLインジェクション：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="01-sqli.html">01｜SQL Injection（SQLi）— 理論、観測、原因、対策</a>
+<a class="menu" href="02-burp-sqlmap.html">02｜Burp Suite → SQLmap — HTTPの再現と診断</a>
+<a class="menu" href="03-mysql-files-os.html">03｜MySQLとファイルシステム・OSシェルの権限境界</a>
+<a class="menu" href="04-xss.html">04｜XSS：反射型・蓄積型・DOM-basedを「入力→HTTP応答→JS」で理解</a>
+<a class="menu" href="05-php-pdo.html">05｜PHP PDO — `prepare()` + `:name1` がなぜSQLiを防ぐのか</a>
+<a class="menu" href="06-command-injection.html">06｜OS Command Injection — DNS照会を例に</a>
+<a class="menu" href="07-php2shell-2026.html">07｜PHP2Shell（2026年10月公開）とDBの関係</a>
+<a class="menu" href="08-ctf-method.html">08｜CTF調査の方法論と「高難度CTF」</a>
+<a class="menu" href="09-error-troubleshooting.html">09｜エラー・表示の読み方 — 一覧</a>
+<a class="menu" href="10-attack-chain-defense.html">10｜攻撃連鎖と多層防御</a>
+<a class="menu" href="11-code-review.html">11｜PHP Webアプリのコードレビュー演習 — 発見→原因→修正</a>
+<a class="menu" href="12-case-study.html">12｜匿名化CTFケーススタディ — 調査結果と不確実性</a>
+<a class="menu" href="13-xss-ctf-field-manual.html">XSS：CTF実戦フィールドマニュアル</a>
+<a class="menu" href="14-os-command-ctf-field-manual.html">OSコマンドインジェクション：調査・原因・安全実装</a>
+<a class="menu" href="15-auth-access-csrf-file.html">認証・認可・CSRF・ファイルアップロード：CTF調査メモ</a>
+<a class="menu" href="16-logging-incident-response.html">CTFから実務へ：ログ・検知・インシデント対応</a>
+<a class="menu" href="17-ctf-scenarios-and-answers.html">CTF問題集：答え合わせと学習目的</a><a class="menu" href="18-http-manual-curl.html">18｜HTTPをコマンドで読む・再現する</a><a class="menu" href="19-os-command-manual.html">19｜OSコマンド注入・シェル文法</a><a class="menu" href="20-xss-manual-contexts.html">20｜XSSの文脈別・DOM手動検証</a><a class="menu" href="21-dirb-manual-discovery.html">21｜DIRB系の手動パス探索</a><a class="menu" href="22-burp-without-burp.html">22｜Burpの通信解析をコマンドで再現</a><a class="menu" href="23-ctf-tactics-decision-trees.html">23｜CTF高難度対応・判断木</a><a class="menu" href="24-other-web-ctf-reasoning.html">24｜認証・認可・アップロード等</a><a class="menu" href="25-manual-drills.html">25｜手動CTF問題集・解説付き</a><a class="menu" href="CTF_MANUAL_QUICKREF.html">★ 手動コマンド早見表</a></div></aside><main class="main"><p class="topnav"><a href="index.html">← 学習メニューへ戻る</a></p><article class="article"><h1>19｜OSコマンドインジェクション：シェルの文法から理解するCTF現場ノート</h1>
+<blockquote>
+<p>この章の実行例は自分の端末での <code>printf</code> 等の無害な出力に限定。Web入力からの検証は主催者の許可範囲で。Webシェル作成・任意ファイル書込み・資格情報収集を目的としない。</p>
+</blockquote>
+<h2>0. 核心は「文字列がシェル文法に昇格するか」</h2>
+<p>SQLiが「SQL文の構造」と「入力値」の混同であるのに対し、OSコマンドインジェクションは「<strong>シェルが解釈するコマンド構造</strong>」と「入力文字列」の混同。<code>$_GET['domain']</code> で受信しても危険は減らず、問題はその値を<strong>どの実行APIに渡すか</strong>。</p>
+<pre><code class="language-php">// 原理の説明用：危険な設計（公開サーバーで使わない）
+$domain = $_GET['domain'] ?? '';
+// exec('nslookup ' . $domain, $result);  // シェルに文字列連結
+
+// 基本対策：シェルを呼ばない
+if (!is_string($domain) ||
+    filter_var($domain, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) === false) {
+    http_response_code(400); exit('invalid');
+}
+$records = dns_get_record($domain, DNS_A | DNS_AAAA);
+</code></pre>
+<h2>1. シェルの構文記号を理解（ローカルターミナルで実行）</h2>
+<pre><code class="language-bash"># ; は別のコマンドとして続行する
+printf 'FIRST\n'; printf 'SECOND\n'
+
+# &amp;&amp; は前のコマンドが成功したときだけ
+true &amp;&amp; printf 'ON_SUCCESS\n'
+false &amp;&amp; printf 'NOT_PRINTED\n'
+
+# || は前のコマンドが失敗したときだけ
+false || printf 'ON_FAILURE\n'
+
+# | は標準出力を後続の標準入力へ
+printf 'hello\n' | tr 'a-z' 'A-Z'
+
+# $(...) は内部コマンドの出力に置き換える
+printf 'value=%s\n' &quot;$(printf 'MARK')&quot;
+</code></pre>
+<p>| 文法 | シェル上の意味 | 本当に注意する点 |
+|---|---|---|
+| <code>;</code> | 順番に実行 | ユーザー文字列がコマンド境界になる |
+| <code>&amp;&amp;</code> | 成功時に次を実行 | 先行コマンドの終了コードに依存 |
+| <code>||</code> | 失敗時に次を実行 | エラー経路でも予期しない動作 |
+| <code>|</code> | stdoutを次のstdinへ | フィルタ動作を組み替えられる |
+| <code>$(...)</code> | コマンド置換 | 文字列の一部分で実行され得る |
+| <code>'</code> / <code>&quot;</code> | 引用符 | シェルの語分割・展開に影響 |
+| <code>&gt;</code> / <code>&lt;</code> | リダイレクト | ファイル入出力の副作用が生じ得る |</p>
+<p>これらは<strong>シェルでの意味</strong>。HTTPで受け取っただけで実行されるわけではない。Pythonの <code>subprocess.run([...], shell=False)</code> や専用DNS APIでは境界が違う。</p>
+<h2>2. 観測段階と誤認しやすい現象</h2>
+<table>
+<thead>
+<tr>
+  <th>観測</th>
+  <th>何が言える？</th>
+  <th>言えないこと</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>検索文字がそのまま表示</td>
+  <td>反射かもしれない</td>
+  <td>OS実行の証明ではない</td>
+</tr>
+<tr>
+  <td>記号入力で500</td>
+  <td>例外処理が起きた</td>
+  <td>コマンド実行の証明ではない</td>
+</tr>
+<tr>
+  <td>無害な目印が返った</td>
+  <td>コマンド出力がHTTPに反映された可能性</td>
+  <td>コマンド実行権限の範囲は不明</td>
+</tr>
+<tr>
+  <td>本文差なし・時間差</td>
+  <td>時間応答型の可能性</td>
+  <td>通信遅延を除外していない</td>
+</tr>
+<tr>
+  <td><code>No output</code></td>
+  <td>stdoutが空または回収失敗など</td>
+  <td>コマンドが実行されていないという断定は不可</td>
+</tr>
+<tr>
+  <td><code>Permission denied</code></td>
+  <td>OS権限の境界</td>
+  <td>SQLiの不成立を示すものではない</td>
+</tr>
+</tbody>
+</table>
+<p><strong>CTFで重要</strong>：開始前に「この入力が最終的にシェルへ渡される証拠があるか」を探す。<code>exec()</code> という関数名を見つけても、固定値のみならユーザー入力によるコマンド注入とは限らない。</p>
+<h2>3. stdout・stderr・終了コードを区別する</h2>
+<pre><code class="language-bash"># 自分のシェルでの理解用。実行結果の違いを見る
+printf 'normal\n'              # stdout
+printf 'warning\n' &gt;&amp;2          # stderr
+false; printf 'last code=%s\n' &quot;$?&quot;
+
+# stdoutとstderrを統合して観察する（無害なローカル例）
+sh -c &quot;printf 'out\\n'; printf 'err\\n' &gt;&amp;2&quot; 2&gt;&amp;1
+</code></pre>
+<p><code>No output</code>はコマンド実行成功でもあり得る。<code>shell_exec()</code> は標準出力を返すがstderrは自動では含まない。<code>echo CTF_TEST</code> が取れて<code>pwd</code>が取れないなどのケースは「出力回収」か「実行コマンド」の別問題である。</p>
+<h2>4. Blind OS command injectionの原理</h2>
+<p>普通のコマンド注入では<strong>stdoutがHTMLに出る</strong>場合があるが、blindでは出ない。CTFでは応答時間、状態変化、管理下の観測点などを考える。遅延判定は<strong>複数回・基準値との比較・処理時間の中央値</strong>を記録し、無用な長時間遅延や大量リクエストは行わない。本文差がないだけでblindと断定しない。</p>
+<h2>5. PHPでの防御を層別に考える</h2>
+<ol>
+<li><strong>シェルを呼ばない</strong>：DNS用途なら <code>dns_get_record()</code> などドメイン専用APIへ。</li>
+<li><strong>型検証</strong>：<code>$_GET['domain']</code> が配列で来る可能性を拒否。</li>
+<li><strong>ドメイン形式検証</strong>：<code>FILTER_VALIDATE_DOMAIN</code> + <code>FILTER_FLAG_HOSTNAME</code> は構文を制限するが、ドメインの存在や通信先の安全を保証しない。</li>
+<li><strong>到達先・通信制限</strong>：DNS問い合わせを許可しても内部ネットワークやDNS負荷への懸念は残る。</li>
+<li><strong>権限・ログ</strong>：PHPユーザーを非特権化、固定タイムアウト、レート制限。</li>
+</ol>
+<pre><code class="language-php">&lt;?php
+$domain = $_GET['domain'] ?? '';
+if (!is_string($domain) || strlen($domain) &gt; 253 ||
+    filter_var($domain, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) === false) {
+    http_response_code(400);
+    exit('invalid domain');
+}
+$records = dns_get_record($domain, DNS_A | DNS_AAAA);
+if ($records === false) {
+    http_response_code(502);
+    exit('lookup failed');
+}
+header('Content-Type: application/json; charset=UTF-8');
+echo json_encode($records, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+</code></pre>
+<h2>6. OSコマンドインジェクションと引数インジェクションは異なる</h2>
+<p>シェルを使わず固定コマンドに引数を渡しても、<strong>値が意図しないオプションとして解釈される</strong>場合がある。たとえばオプションの先頭記号や引数の個数を厳格に扱い、許可された値だけを渡す。「シェルを避けた」だけで必ず完成ではない。コマンドにより <code>--</code> でオプション終端を示せるが、すべてに対応するとは限らない。</p>
+<h2>7. 初級→上級の判断順序</h2>
+<pre><code class="language-text">入力パラメータがある
+  → Webアプリの処理目的を推定（名前解決? 圧縮? ファイル変換?）
+  → 専用APIか外部プロセスかを判定
+  → シェル経由か、引数配列かを区別
+  → 通常入力/不一致/特殊文字で挙動を比較
+  → 何が実行・出力されるかを限定的に確認
+  → OSの最小権限・エラー・ログを評価
+</code></pre>
+<h3>事故と対策</h3>
+<ul>
+<li>任意コマンド実行によるサーバー改ざん、機密へのアクセス、サービス停止が起こり得る。</li>
+<li>正しいドメイン形式だから<strong>安全な宛先</strong>とは限らない。</li>
+<li>DBの<code>FILE</code>権限とPHPのOS権限は別物。SQLiからOSコマンドへ行くには追加の条件が必要。</li>
+</ul>
+<h2>一次資料</h2>
+<ul>
+<li><a href="https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html">OWASP OS Command Injection Defense</a></li>
+<li><a href="https://portswigger.net/web-security/os-command-injection">PortSwigger OS command injection</a></li>
+<li><a href="https://wstg.owasp.org/latest/4-Web_Application_Security_Testing/07-Injection/12-Command_Injection/">OWASP WSTG command injection</a></li>
+<li><a href="https://www.php.net/manual/en/function.dns-get-record.php">PHP dns_get_record</a></li>
+</ul>
+</article><p class="footer"><a href="README.html">教材README</a> · <a href="SOURCES.html">根拠資料</a> · <a href="CTF_MANUAL_QUICKREF.html">コマンド早見表</a></p></main></div></body></html>
